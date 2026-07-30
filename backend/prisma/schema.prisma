@@ -29,24 +29,23 @@ enum Weekday {
 }
 
 model Task {
-  id                String     @id @default(uuid())
-  title             String
-  description       String?
-  status            TaskStatus @default(TODO)
-  order             Int        @default(0)
-  dueDate           DateTime?
-  reminderEmail     String?
-  reminder30Sent    Boolean    @default(false)
-  reminder5Sent     Boolean    @default(false)
-  reminderDueSent   Boolean    @default(false)
-  isRecurring       Boolean    @default(false)
-  recurringDays     Weekday[]  @default([])
-  recurringTime     String?
-  lastRecurredOn    String?
-  createdAt         DateTime   @default(now())
-  updatedAt         DateTime   @updatedAt
+  id              String     @id @default(uuid())
+  title           String
+  description     String?
+  status          TaskStatus @default(TODO)
+  order           Int        @default(0)
+  dueDate         DateTime?
+  reminderEmail   String?
+  reminder30Sent  Boolean    @default(false)
+  reminder5Sent   Boolean    @default(false)
+  reminderDueSent Boolean    @default(false)
+  isRecurring     Boolean    @default(false)
+  recurringDays   Weekday[]  @default([])
+  recurringTime   String?
+  lastRecurredOn  String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
 
   @@index([status, order])
   @@map("tasks")
 }
-
