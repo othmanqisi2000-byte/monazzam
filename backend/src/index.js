@@ -20,7 +20,7 @@ app.use(
 );
 app.use(express.json());
 
-// --- Request logging (lightweight, no external deps) ---
+// --- Request logging ---
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
@@ -47,21 +47,14 @@ app.use((err, req, res, next) => {
   });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Kanban API server running on http://localhost:${PORT}`);
-  startReminderJob();
-  startRecurringJob();
-});
-
-// --- Graceful shutdown ---
-async function shutdown(signal) {
-  console.log(`\n${signal} received. Shutting down gracefully...`);
-  server.close(async () => {
-    await prisma.$disconnect();
-    console.log('Server and database connection closed.');
-    process.exit(0);
+// --- Local Development vs Production (Vercel) ---
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`🚀 Kanban API server running on http://localhost:${PORT}`);
+    startReminderJob();
+    startRecurringJob();
   });
 }
 
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
+// تصدير app ليستخدمه Vercel كـ Serverless Function
+module.exports = app;
