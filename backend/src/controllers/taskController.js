@@ -1,9 +1,14 @@
 const prisma = require('../lib/prisma');
 const { WEEKDAY_CODES, resolveOccurrenceForToday } = require('../lib/recurrence');
+const { requireWorkspaceAccess } = require('../lib/workspaceAccess');
 
 const VALID_STATUSES = ['TODO', 'IN_PROGRESS', 'DONE'];
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+function resolveWorkspaceId(req) {
+  return req.query.workspaceId || req.body?.workspaceId;
+}
 
 /**
  * GET /api/tasks
@@ -12,13 +17,20 @@ const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
  */
 async function getAllTasks(req, res) {
   try {
+    const workspaceId = resolveWorkspaceId(req);
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'workspaceId is required.' });
+    }
+
+    await requireWorkspaceAccess(workspaceId, req.user.id);
     const tasks = await prisma.task.findMany({
+      where: { workspaceId },
       orderBy: [{ status: 'asc' }, { order: 'asc' }],
     });
     return res.status(200).json(tasks);
   } catch (error) {
     console.error('Error fetching tasks:', error);
-    return res.status(500).json({ error: 'Failed to fetch tasks.' });
+    return res.status(error.status || 500).json({ error: error.message || 'Failed to fetch tasks.' });
   }
 }
 
@@ -28,6 +40,13 @@ async function getAllTasks(req, res) {
  */
 async function createTask(req, res) {
   try {
+    const workspaceId = resolveWorkspaceId(req);
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'workspaceId is required.' });
+    }
+
+    await requireWorkspaceAccess(workspaceId, req.user.id);
+
     const { title, description, status, dueDate, reminderEmail, isRecurring, recurringDays, recurringTime } =
       req.body;
 
@@ -61,7 +80,7 @@ async function createTask(req, res) {
     const taskStatus = VALID_STATUSES.includes(status) ? status : 'TODO';
 
     const lastTask = await prisma.task.findFirst({
-      where: { status: taskStatus },
+      where: { status: taskStatus, workspaceId },
       orderBy: { order: 'desc' },
     });
 
@@ -73,6 +92,8 @@ async function createTask(req, res) {
 
     const task = await prisma.task.create({
       data: {
+        userId: req.user.id,
+        workspaceId,
         title: title.trim(),
         description: description ? description.trim() : null,
         status: taskStatus,
@@ -89,7 +110,7 @@ async function createTask(req, res) {
     return res.status(201).json(task);
   } catch (error) {
     console.error('Error creating task:', error);
-    return res.status(500).json({ error: 'Failed to create task.' });
+    return res.status(error.status || 500).json({ error: error.message || 'Failed to create task.' });
   }
 }
 
@@ -101,10 +122,16 @@ async function createTask(req, res) {
 async function updateTask(req, res) {
   try {
     const { id } = req.params;
+    const workspaceId = resolveWorkspaceId(req);
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'workspaceId is required.' });
+    }
+    await requireWorkspaceAccess(workspaceId, req.user.id);
+
     const { title, description, status, order, dueDate, reminderEmail, isRecurring, recurringDays, recurringTime } =
       req.body;
 
-    const existing = await prisma.task.findUnique({ where: { id } });
+    const existing = await prisma.task.findFirst({ where: { id, workspaceId } });
     if (!existing) {
       return res.status(404).json({ error: 'Task not found.' });
     }
@@ -180,6 +207,9 @@ async function updateTask(req, res) {
       }
     }
     if (reminderEmail !== undefined) data.reminderEmail = reminderEmail ? reminderEmail.trim() : null;
+    data.lastEditedById = req.user.id;
+    data.lastEditedByName = req.user.name;
+    data.lastEditedAt = new Date();
 
     const task = await prisma.task.update({
       where: { id },
@@ -189,7 +219,7 @@ async function updateTask(req, res) {
     return res.status(200).json(task);
   } catch (error) {
     console.error('Error updating task:', error);
-    return res.status(500).json({ error: 'Failed to update task.' });
+    return res.status(error.status || 500).json({ error: error.message || 'Failed to update task.' });
   }
 }
 
@@ -202,6 +232,12 @@ async function updateTask(req, res) {
  */
 async function reorderTasks(req, res) {
   try {
+    const workspaceId = resolveWorkspaceId(req);
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'workspaceId is required.' });
+    }
+    await requireWorkspaceAccess(workspaceId, req.user.id);
+
     const { tasks } = req.body;
 
     if (!Array.isArray(tasks) || tasks.length === 0) {
@@ -216,12 +252,28 @@ async function reorderTasks(req, res) {
       }
     }
 
+    const taskIds = tasks.map((task) => task.id);
+    const ownedTasks = await prisma.task.findMany({
+      where: { id: { in: taskIds }, workspaceId },
+      select: { id: true },
+    });
+
+    if (ownedTasks.length !== taskIds.length) {
+      return res.status(403).json({ error: 'You can only reorder your own tasks.' });
+    }
+
     // Run all updates in a single transaction so the board state is never
     // left half-updated if one write fails.
     const updates = tasks.map((t) =>
       prisma.task.update({
         where: { id: t.id },
-        data: { status: t.status, order: t.order },
+        data: {
+          status: t.status,
+          order: t.order,
+          lastMovedById: req.user.id,
+          lastMovedByName: req.user.name,
+          lastMovedAt: new Date(),
+        },
       })
     );
 
@@ -230,7 +282,7 @@ async function reorderTasks(req, res) {
     return res.status(200).json(updatedTasks);
   } catch (error) {
     console.error('Error reordering tasks:', error);
-    return res.status(500).json({ error: 'Failed to reorder tasks.' });
+    return res.status(error.status || 500).json({ error: error.message || 'Failed to reorder tasks.' });
   }
 }
 
@@ -240,8 +292,13 @@ async function reorderTasks(req, res) {
 async function deleteTask(req, res) {
   try {
     const { id } = req.params;
+    const workspaceId = resolveWorkspaceId(req);
+    if (!workspaceId) {
+      return res.status(400).json({ error: 'workspaceId is required.' });
+    }
+    await requireWorkspaceAccess(workspaceId, req.user.id);
 
-    const existing = await prisma.task.findUnique({ where: { id } });
+    const existing = await prisma.task.findFirst({ where: { id, workspaceId } });
     if (!existing) {
       return res.status(404).json({ error: 'Task not found.' });
     }
@@ -251,7 +308,7 @@ async function deleteTask(req, res) {
     return res.status(200).json({ message: 'Task deleted successfully.', id });
   } catch (error) {
     console.error('Error deleting task:', error);
-    return res.status(500).json({ error: 'Failed to delete task.' });
+    return res.status(error.status || 500).json({ error: error.message || 'Failed to delete task.' });
   }
 }
 

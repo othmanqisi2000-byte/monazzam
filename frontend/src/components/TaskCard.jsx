@@ -1,6 +1,6 @@
 import React from 'react';
 import { Draggable } from '@hello-pangea/dnd';
-import { Pencil, Trash2, GripVertical, Clock, Mail, Repeat } from 'lucide-react';
+import { Pencil, Trash2, GripVertical, Clock, Mail, Repeat, UserPen } from 'lucide-react';
 
 const STATUS_ACCENT = {
   TODO: 'border-l-slate-400',
@@ -65,6 +65,22 @@ function TaskCard({ task, index, onEdit, onDelete }) {
                 <p className="text-xs text-slate-500 mt-1 break-words line-clamp-3">
                   {task.description}
                 </p>
+              )}
+              {(task.lastEditedByName || task.lastMovedByName) && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {task.lastEditedByName && (
+                    <div className="inline-flex items-center gap-1.5 rounded bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
+                      <UserPen size={11} />
+                      <span>Edited by {task.lastEditedByName}</span>
+                    </div>
+                  )}
+                  {task.lastMovedByName && (
+                    <div className="inline-flex items-center gap-1.5 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
+                      <UserPen size={11} />
+                      <span>Moved by {task.lastMovedByName}</span>
+                    </div>
+                  )}
+                </div>
               )}
               {(task.dueDate || task.isRecurring) && (
                 <div className="flex items-center gap-1.5 mt-2 flex-wrap">

@@ -28,8 +28,70 @@ enum Weekday {
   SAT
 }
 
+enum WorkspaceRole {
+  OWNER
+  MEMBER
+}
+
+model User {
+  id                  String            @id @default(uuid())
+  name                String
+  email               String            @unique
+  passwordHash        String
+  reminderEmail       String?
+  tasks               Task[]
+  editedTasks         Task[]            @relation("TaskLastEditedBy")
+  movedTasks          Task[]            @relation("TaskLastMovedBy")
+  workspaceMemberships WorkspaceMember[]
+  ownedWorkspaces     Workspace[]       @relation("WorkspaceOwner")
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@map("users")
+}
+
+model Workspace {
+  id        String            @id @default(uuid())
+  name      String
+  ownerId   String
+  owner     User              @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members   WorkspaceMember[]
+  tasks     Task[]
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([ownerId])
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String        @id @default(uuid())
+  workspaceId String
+  userId      String
+  role        WorkspaceRole @default(MEMBER)
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime      @default(now())
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_members")
+}
+
 model Task {
   id              String     @id @default(uuid())
+  userId          String?
+  user            User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId     String?
+  workspace       Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  lastEditedById  String?
+  lastEditedBy    User?      @relation("TaskLastEditedBy", fields: [lastEditedById], references: [id], onDelete: SetNull)
+  lastEditedByName String?
+  lastEditedAt    DateTime?
+  lastMovedById   String?
+  lastMovedBy     User?      @relation("TaskLastMovedBy", fields: [lastMovedById], references: [id], onDelete: SetNull)
+  lastMovedByName String?
+  lastMovedAt     DateTime?
   title           String
   description     String?
   status          TaskStatus @default(TODO)
@@ -46,6 +108,6 @@ model Task {
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
 
-  @@index([status, order])
+  @@index([workspaceId, status, order])
   @@map("tasks")
 }

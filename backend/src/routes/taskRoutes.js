@@ -7,9 +7,12 @@ const {
   reorderTasks,
   deleteTask,
 } = require('../controllers/taskController');
+const { requireAuth } = require('../middleware/authMiddleware');
 
 // IMPORTANT: /reorder is registered before /:id-style routes of the same
 // method to avoid any accidental path-matching ambiguity.
+router.use(requireAuth);
+
 router.get('/', getAllTasks);
 router.post('/', createTask);
 router.put('/reorder', reorderTasks);

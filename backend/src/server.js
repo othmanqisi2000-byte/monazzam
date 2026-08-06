@@ -3,6 +3,8 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const taskRoutes = require('./routes/taskRoutes');
+const authRoutes = require('./routes/authRoutes');
+const workspaceRoutes = require('./routes/workspaceRoutes');
 const prisma = require('./lib/prisma');
 const { startReminderJob } = require('./jobs/reminderJob');
 const { startRecurringJob } = require('./jobs/recurringJob');
@@ -10,22 +12,19 @@ const { startRecurringJob } = require('./jobs/recurringJob');
 const app = express();
 
 const PORT = process.env.PORT || 5000;
-const allowedOrigins = [
-  'http://localhost:5173',
-  'https://monazzam-bmur.vercel.app'
-];
+const allowedOrigins = Array.from(
+  new Set(
+    [
+      'http://localhost:5173',
+      'https://monazzam-bmur.vercel.app',
+      process.env.CLIENT_ORIGIN,
+    ].filter(Boolean)
+  )
+);
 
 app.use(
   cors({
     origin: allowedOrigins,
-    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
-  })
-);
-
-// --- Middleware ---
-app.use(
-  cors({
-    origin: CLIENT_ORIGIN,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
   })
 );
@@ -52,6 +51,8 @@ app.get('/health', (req, res) => {
   res.status(200).json({ status: 'ok' });
 });
 
+app.use('/api/auth', authRoutes);
+app.use('/api/workspaces', workspaceRoutes);
 app.use('/api/tasks', taskRoutes);
 
 // --- 404 handler ---

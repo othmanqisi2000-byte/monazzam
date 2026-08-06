@@ -1,36 +1,13 @@
-const nodemailer = require('nodemailer');
+const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+const GMAIL_SEND_URL = 'https://gmail.googleapis.com/gmail/v1/users/me/messages/send';
 
-let transporter = null;
-
-/**
- * Lazily creates a singleton SMTP transporter from env vars.
- * Returns null (instead of throwing) if SMTP isn't configured, so the app
- * can still run without email reminders configured.
- */
-function getTransporter() {
-  if (transporter) return transporter;
-
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS } = process.env;
-
-  if (!SMTP_HOST || !SMTP_PORT || !SMTP_USER || !SMTP_PASS) {
-    return null;
-  }
-
-  transporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: Number(SMTP_PORT),
-    secure: Number(SMTP_PORT) === 465, // true for port 465, false for 587/25
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_PASS,
-    },
-    // Force IPv4: on some Windows/router setups Node prefers IPv6 for the
-    // initial connection, which hangs against Gmail and times out even
-    // though a plain IPv4 TCP test succeeds.
-    family: 4,
-  });
-
-  return transporter;
+function isEmailProviderConfigured() {
+  return Boolean(
+    process.env.GMAIL_CLIENT_ID &&
+      process.env.GMAIL_CLIENT_SECRET &&
+      process.env.GMAIL_REFRESH_TOKEN &&
+      process.env.GMAIL_SENDER_EMAIL
+  );
 }
 
 function formatDateTime(date) {
@@ -43,16 +20,65 @@ function formatDateTime(date) {
   });
 }
 
+function toBase64Url(input) {
+  return Buffer.from(input)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+async function getAccessToken() {
+  const response = await fetch(GOOGLE_TOKEN_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: new URLSearchParams({
+      client_id: process.env.GMAIL_CLIENT_ID,
+      client_secret: process.env.GMAIL_CLIENT_SECRET,
+      refresh_token: process.env.GMAIL_REFRESH_TOKEN,
+      grant_type: 'refresh_token',
+    }),
+  });
+
+  const bodyText = await response.text();
+  if (!response.ok) {
+    throw new Error(`Google OAuth token request failed (${response.status}): ${bodyText}`);
+  }
+
+  const body = JSON.parse(bodyText);
+  if (!body.access_token) {
+    throw new Error('Google OAuth token response did not include an access token.');
+  }
+
+  return body.access_token;
+}
+
+function buildMimeMessage({ from, to, subject, html }) {
+  return [
+    `From: ${from}`,
+    `To: ${to}`,
+    'MIME-Version: 1.0',
+    'Content-Type: text/html; charset="UTF-8"',
+    `Subject: ${subject}`,
+    '',
+    html,
+  ].join('\r\n');
+}
+
 /**
- * Sends a reminder email for a task approaching its due date.
- * @param {object} task - Task record (must include title, description, dueDate, reminderEmail)
- * @param {'30_MIN' | '5_MIN' | 'DUE'} stage - Which reminder threshold triggered this email
- * @param {number} minutesRemaining - Minutes left until the task is due (0 at due time)
+ * Sends a reminder email using Gmail API with OAuth2 refresh token flow.
+ * Assumption: the sender granted offline access and supplied a refresh token.
  */
-async function sendReminderEmail(task, stage, minutesRemaining) {
-  const t = getTransporter();
-  if (!t) {
-    console.warn('SMTP not configured — skipping reminder email for task', task.id);
+async function sendReminderEmail(task, stage, minutesRemaining, recipientEmail) {
+  if (!isEmailProviderConfigured()) {
+    console.warn('Gmail API not configured - skipping reminder email for task', task.id);
+    return;
+  }
+
+  if (!recipientEmail) {
+    console.warn('No recipient email resolved - skipping reminder email for task', task.id);
     return;
   }
 
@@ -64,8 +90,8 @@ async function sendReminderEmail(task, stage, minutesRemaining) {
 
   const subject =
     stage === 'DUE'
-      ? `⏰ "${task.title}" starts now`
-      : `⏰ Reminder: "${task.title}" starts in ${stageLabel}`;
+      ? `"${task.title}" starts now`
+      : `Reminder: "${task.title}" starts in ${stageLabel}`;
 
   const dueDateLabel = formatDateTime(new Date(task.dueDate));
   const remainingLabel =
@@ -101,12 +127,32 @@ async function sendReminderEmail(task, stage, minutesRemaining) {
     </div>
   `;
 
-  await t.sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to: task.reminderEmail,
+  const accessToken = await getAccessToken();
+  const mimeMessage = buildMimeMessage({
+    from: process.env.GMAIL_SENDER_EMAIL,
+    to: recipientEmail,
     subject,
     html,
   });
+
+  const response = await fetch(GMAIL_SEND_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'monazzan-kanban-app',
+    },
+    body: JSON.stringify({
+      raw: toBase64Url(mimeMessage),
+    }),
+  });
+
+  const bodyText = await response.text();
+  if (!response.ok) {
+    throw new Error(`Gmail API send failed (${response.status}): ${bodyText}`);
+  }
+
+  return JSON.parse(bodyText);
 }
 
-module.exports = { sendReminderEmail, getTransporter };
+module.exports = { sendReminderEmail, isEmailProviderConfigured };

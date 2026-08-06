@@ -5,36 +5,54 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * One-time settings modal for the reminder email address.
- * The address is saved locally and reused automatically for every task
- * that has a due date, instead of being re-entered per task.
+ * If left empty, reminders fall back to the user's account email.
  */
 function EmailSettingsModal({ isOpen, currentEmail, onClose, onSave }) {
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setEmail(currentEmail || '');
       setError('');
+      setIsSaving(false);
     }
   }, [isOpen, currentEmail]);
 
   if (!isOpen) return null;
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e.preventDefault();
     const trimmed = email.trim();
     if (trimmed && !EMAIL_REGEX.test(trimmed)) {
       setError('Enter a valid email address.');
       return;
     }
-    onSave(trimmed);
-    onClose();
+
+    setError('');
+    setIsSaving(true);
+    try {
+      await onSave(trimmed);
+      onClose();
+    } catch (saveError) {
+      setError(saveError.message || 'Failed to save reminder email.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const handleClear = () => {
-    onSave('');
-    onClose();
+  const handleClear = async () => {
+    setError('');
+    setIsSaving(true);
+    try {
+      await onSave('');
+      onClose();
+    } catch (saveError) {
+      setError(saveError.message || 'Failed to remove reminder email.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -43,27 +61,27 @@ function EmailSettingsModal({ isOpen, currentEmail, onClose, onSave }) {
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-xl w-full max-w-sm p-6"
+        className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-1">
-          <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+        <div className="mb-1 flex items-center justify-between">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-800">
             <Mail size={18} className="text-indigo-600" />
             Reminder Email
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+            className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
             aria-label="Close"
           >
             <X size={18} />
           </button>
         </div>
-        <p className="text-sm text-slate-500 mb-4">
+        <p className="mb-4 text-sm text-slate-500">
           Set this once. Any task with a due date will automatically send reminders to this
-          address 30 min before, 5 min before, and at the due time — as long as it's still in
-          "To Do".
+          address 30 min before, 5 min before, and at the due time as long as it is still in
+          "To Do". If you leave this empty, reminders go to your account email instead.
         </p>
 
         <form onSubmit={handleSave} className="space-y-3">
@@ -79,11 +97,12 @@ function EmailSettingsModal({ isOpen, currentEmail, onClose, onSave }) {
           />
           {error && <p className="text-xs text-red-500">{error}</p>}
 
-          <div className="flex justify-between items-center pt-1">
+          <div className="flex items-center justify-between pt-1">
             {currentEmail ? (
               <button
                 type="button"
                 onClick={handleClear}
+                disabled={isSaving}
                 className="text-xs text-slate-400 hover:text-red-500"
               >
                 Remove email
@@ -95,15 +114,17 @@ function EmailSettingsModal({ isOpen, currentEmail, onClose, onSave }) {
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-md"
+                disabled={isSaving}
+                className="rounded-md px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md"
+                disabled={isSaving}
+                className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
               >
-                Save
+                {isSaving ? 'Saving...' : 'Save'}
               </button>
             </div>
           </div>

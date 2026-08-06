@@ -4,9 +4,8 @@ import { Plus, AlertCircle, Loader2, Mail } from 'lucide-react';
 import Column from './Column.jsx';
 import TaskModal from './TaskModal.jsx';
 import EmailSettingsModal from './EmailSettingsModal.jsx';
+import WorkspacePanel from './WorkspacePanel.jsx';
 import { taskApi } from '../services/api.js';
-
-const REMINDER_EMAIL_STORAGE_KEY = 'kanban_reminder_email';
 
 const COLUMNS = [
   { id: 'TODO', title: 'To Do' },
@@ -18,39 +17,43 @@ function reindex(taskList) {
   return taskList.map((t, index) => ({ ...t, order: index }));
 }
 
-function KanbanBoard() {
+function KanbanBoard({
+  currentUser,
+  workspaces,
+  activeWorkspaceId,
+  onSelectWorkspace,
+  onCreateWorkspace,
+  onLoadWorkspaceMembers,
+  onAddWorkspaceMember,
+  reminderEmail,
+  onSaveReminderEmail,
+}) {
   const [tasks, setTasks] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [modalState, setModalState] = useState({ isOpen: false, task: null, defaultStatus: 'TODO' });
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
-  const [reminderEmail, setReminderEmail] = useState(
-    () => localStorage.getItem(REMINDER_EMAIL_STORAGE_KEY) || ''
-  );
   const [isEmailSettingsOpen, setIsEmailSettingsOpen] = useState(false);
 
-  const handleSaveReminderEmail = (email) => {
-    setReminderEmail(email);
-    if (email) {
-      localStorage.setItem(REMINDER_EMAIL_STORAGE_KEY, email);
-    } else {
-      localStorage.removeItem(REMINDER_EMAIL_STORAGE_KEY);
-    }
-  };
-
   const loadTasks = useCallback(async () => {
+    if (!activeWorkspaceId) {
+      setTasks([]);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
-      const data = await taskApi.getAllTasks();
+      const data = await taskApi.getAllTasks(activeWorkspaceId);
       setTasks(data);
     } catch (err) {
       setError(err.message || 'Failed to load tasks.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     loadTasks();
@@ -121,7 +124,7 @@ function KanbanBoard() {
           }));
 
     try {
-      await taskApi.reorderTasks(affectedTasks);
+      await taskApi.reorderTasks(activeWorkspaceId, affectedTasks);
     } catch (err) {
       setError(err.message || 'Failed to save the new order. Reverting.');
       setTasks(previousTasks);
@@ -145,10 +148,10 @@ function KanbanBoard() {
 
   const handleModalSubmit = async (formData) => {
     if (modalState.task) {
-      const updated = await taskApi.updateTask(modalState.task.id, formData);
+      const updated = await taskApi.updateTask(activeWorkspaceId, modalState.task.id, formData);
       setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
     } else {
-      const created = await taskApi.createTask(formData);
+      const created = await taskApi.createTask(activeWorkspaceId, formData);
       setTasks((prev) => [...prev, created]);
     }
   };
@@ -163,7 +166,7 @@ function KanbanBoard() {
     setTasks((prev) => prev.filter((t) => t.id !== deleteTarget.id));
     setDeleteTarget(null);
     try {
-      await taskApi.deleteTask(deleteTarget.id);
+      await taskApi.deleteTask(activeWorkspaceId, deleteTarget.id);
     } catch (err) {
       setError(err.message || 'Failed to delete task.');
       setTasks(previousTasks);
@@ -181,6 +184,15 @@ function KanbanBoard() {
 
   return (
     <div>
+      <WorkspacePanel
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        onSelectWorkspace={onSelectWorkspace}
+        onCreateWorkspace={onCreateWorkspace}
+        onLoadMembers={onLoadWorkspaceMembers}
+        onAddMember={onAddWorkspaceMember}
+      />
+
       {error && (
         <div className="mb-4 flex items-center gap-2 text-sm text-red-700 bg-red-50 border border-red-200 rounded-md px-4 py-2">
           <AlertCircle size={16} />
@@ -201,6 +213,7 @@ function KanbanBoard() {
         <button
           type="button"
           onClick={() => openCreateModal('TODO')}
+          disabled={!activeWorkspaceId}
           className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-sm"
         >
           <Plus size={16} />
@@ -208,21 +221,27 @@ function KanbanBoard() {
         </button>
       </div>
 
-      <DragDropContext onDragEnd={handleDragEnd}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
-          {COLUMNS.map((col) => (
-            <Column
-              key={col.id}
-              columnId={col.id}
-              title={col.title}
-              tasks={tasksByColumn[col.id]}
-              onAddTask={openCreateModal}
-              onEditTask={openEditModal}
-              onDeleteTask={requestDelete}
-            />
-          ))}
+      {activeWorkspaceId ? (
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
+            {COLUMNS.map((col) => (
+              <Column
+                key={col.id}
+                columnId={col.id}
+                title={col.title}
+                tasks={tasksByColumn[col.id]}
+                onAddTask={openCreateModal}
+                onEditTask={openEditModal}
+                onDeleteTask={requestDelete}
+              />
+            ))}
+          </div>
+        </DragDropContext>
+      ) : (
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center text-sm text-slate-500">
+          Create or choose a workspace to start collaborating on tasks.
         </div>
-      </DragDropContext>
+      )}
 
       {isSavingOrder && (
         <div className="fixed bottom-4 right-4 flex items-center gap-2 text-xs text-slate-500 bg-white border border-slate-200 rounded-full px-3 py-1.5 shadow-md">
@@ -245,7 +264,7 @@ function KanbanBoard() {
         isOpen={isEmailSettingsOpen}
         currentEmail={reminderEmail}
         onClose={() => setIsEmailSettingsOpen(false)}
-        onSave={handleSaveReminderEmail}
+        onSave={onSaveReminderEmail}
       />
 
       {deleteTarget && (
