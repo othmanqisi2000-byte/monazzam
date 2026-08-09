@@ -17,6 +17,11 @@ function WorkspacePanel({
   const canManageMembers = activeWorkspace?.role === 'OWNER';
   const canLeaveWorkspace = Boolean(activeWorkspace && activeWorkspace.role !== 'OWNER');
   const canDeleteWorkspace = Boolean(activeWorkspace && activeWorkspace.role === 'OWNER');
+  const workspaceModeLabel =
+    activeWorkspace?.taskMode === 'OWNER_ASSIGNED_ONLY'
+      ? 'Separate copy for each member'
+      : 'Shared tasks';
+
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceError, setWorkspaceError] = useState('');
@@ -168,9 +173,7 @@ function WorkspacePanel({
                 >
                   <div>
                     <div className="text-sm font-medium text-slate-800">{invite.workspaceName}</div>
-                    <div className="text-xs text-slate-500">
-                      Invited by {invite.invitedByName}
-                    </div>
+                    <div className="text-xs text-slate-500">Invited by {invite.invitedByName}</div>
                   </div>
                   <div className="flex gap-2">
                     <button
@@ -201,6 +204,7 @@ function WorkspacePanel({
             )}
           </div>
         )}
+
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-sm font-medium text-slate-500">Shared workspace</p>
@@ -217,8 +221,13 @@ function WorkspacePanel({
                 ))}
               </select>
               <div className="text-xs text-slate-500">
-                {activeWorkspace ? `${activeWorkspace.memberCount} member(s) • ${activeWorkspace.taskCount} task(s)` : 'No workspace selected'}
+                {activeWorkspace
+                  ? `${activeWorkspace.memberCount} member(s) • ${activeWorkspace.taskCount} task(s)`
+                  : 'No workspace selected'}
               </div>
+              {activeWorkspace && (
+                <div className="text-xs font-medium text-indigo-700">Mode: {workspaceModeLabel}</div>
+              )}
             </div>
           </div>
 
@@ -264,6 +273,7 @@ function WorkspacePanel({
             )}
           </div>
         </div>
+
         {leaveError && (
           <div className="mt-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <AlertCircle size={16} />
@@ -279,8 +289,14 @@ function WorkspacePanel({
       </div>
 
       {isCreateOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4" onClick={() => setIsCreateOpen(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
+          onClick={() => setIsCreateOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
             <h3 className="text-lg font-semibold text-slate-800">Create a shared workspace</h3>
             <p className="mt-2 text-sm text-slate-500">
               Create a place where you and other users can see and manage the same tasks together.
@@ -324,8 +340,14 @@ function WorkspacePanel({
       )}
 
       {isMembersOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4" onClick={() => setIsMembersOpen(false)}>
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
+          onClick={() => setIsMembersOpen(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
             <h3 className="text-lg font-semibold text-slate-800">
               {activeWorkspace ? `${activeWorkspace.name} members` : 'Workspace members'}
             </h3>
@@ -446,7 +468,10 @@ function WorkspacePanel({
                 </div>
               ) : (
                 members.map((member) => (
-                  <div key={member.id} className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3">
+                  <div
+                    key={member.id}
+                    className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3"
+                  >
                     <div>
                       <div className="text-sm font-semibold text-slate-800">{member.name}</div>
                       <div className="text-xs text-slate-500">{member.email}</div>

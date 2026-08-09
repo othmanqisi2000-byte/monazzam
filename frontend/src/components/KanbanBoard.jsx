@@ -41,6 +41,8 @@ function KanbanBoard({
   currentUser,
   workspaces,
   pendingInvitations,
+  onRefreshWorkspaces,
+  onUpdateWorkspace,
   activeWorkspaceId,
   onSelectWorkspace,
   onCreateWorkspace,
@@ -54,6 +56,8 @@ function KanbanBoard({
 }) {
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) || null;
   const isOwner = activeWorkspace?.role === 'OWNER';
+  const isAssignedOnlyWorkspace = activeWorkspace?.taskMode === 'OWNER_ASSIGNED_ONLY';
+  const canCreateTasks = Boolean(activeWorkspaceId) && (!isAssignedOnlyWorkspace || isOwner);
 
   const [sharedTasks, setSharedTasks] = useState([]);
   const [assignedTasks, setAssignedTasks] = useState([]);
@@ -81,12 +85,15 @@ function KanbanBoard({
       setSharedTasks(data.sharedTasks || []);
       setAssignedTasks(data.assignedTasks || []);
       setAssignedOverview(data.assignedOverview || []);
+      if (data.workspaceTaskMode && activeWorkspace?.taskMode !== data.workspaceTaskMode) {
+        onUpdateWorkspace?.(activeWorkspaceId, { taskMode: data.workspaceTaskMode });
+      }
     } catch (err) {
       setError(err.message || 'Failed to load tasks.');
     } finally {
       setIsLoading(false);
     }
-  }, [activeWorkspaceId]);
+  }, [activeWorkspace?.taskMode, activeWorkspaceId, onUpdateWorkspace]);
 
   useEffect(() => {
     loadTasks();
@@ -178,11 +185,9 @@ function KanbanBoard({
 
     const created = await taskApi.createTask(activeWorkspaceId, formData);
     if (Array.isArray(created)) {
-      if (isOwner) {
-        await loadTasks();
-      } else {
-        setAssignedTasks((prev) => [...prev, ...created]);
-      }
+      onUpdateWorkspace?.(activeWorkspaceId, { taskMode: 'OWNER_ASSIGNED_ONLY' });
+      await onRefreshWorkspaces?.(activeWorkspaceId);
+      await loadTasks();
       return;
     }
 
@@ -257,47 +262,51 @@ function KanbanBoard({
         <button
           type="button"
           onClick={() => openCreateModal('TODO')}
-          disabled={!activeWorkspaceId}
+          disabled={!canCreateTasks}
           className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-sm"
         >
           <Plus size={16} />
-          Add Task
+          {isAssignedOnlyWorkspace ? 'Add Member Task' : 'Add Task'}
         </button>
       </div>
 
       {activeWorkspaceId ? (
         <>
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-800">Shared Tasks</h2>
-                <p className="text-sm text-slate-500">These tasks stay visible to everyone in the community.</p>
+          {!isAssignedOnlyWorkspace && (
+            <section>
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-800">Shared Tasks</h2>
+                  <p className="text-sm text-slate-500">These tasks stay visible to everyone in the community.</p>
+                </div>
               </div>
-            </div>
-            <DragDropContext onDragEnd={(result) => handleDragEnd(result, 'shared')}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
-                {COLUMNS.map((col) => (
-                  <Column
-                    key={`shared-${col.id}`}
-                    columnId={col.id}
-                    droppableId={`shared-${col.id}`}
-                    title={col.title}
-                    tasks={sharedTasksByColumn[col.id]}
-                    onAddTask={openCreateModal}
-                    onEditTask={openEditModal}
-                    onDeleteTask={requestDelete}
-                  />
-                ))}
-              </div>
-            </DragDropContext>
-          </section>
+              <DragDropContext onDragEnd={(result) => handleDragEnd(result, 'shared')}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
+                  {COLUMNS.map((col) => (
+                    <Column
+                      key={`shared-${col.id}`}
+                      columnId={col.id}
+                      droppableId={`shared-${col.id}`}
+                      title={col.title}
+                      tasks={sharedTasksByColumn[col.id]}
+                      onAddTask={openCreateModal}
+                      onEditTask={openEditModal}
+                      onDeleteTask={requestDelete}
+                    />
+                  ))}
+                </div>
+              </DragDropContext>
+            </section>
+          )}
 
           {!isOwner && (
             <section className="mt-8">
               <div className="mb-3">
                 <h2 className="text-lg font-semibold text-slate-800">My Assigned Tasks</h2>
                 <p className="text-sm text-slate-500">
-                  The owner created these for members. Your progress here is separate from everyone else.
+                  {isAssignedOnlyWorkspace
+                    ? 'This workspace only uses separate member copies. Your progress here is independent from everyone else.'
+                    : 'The owner created these for members. Your progress here is separate from everyone else.'}
                 </p>
               </div>
               <DragDropContext onDragEnd={(result) => handleDragEnd(result, 'assigned')}>
@@ -405,6 +414,7 @@ function KanbanBoard({
         defaultStatus={modalState.defaultStatus}
         globalReminderEmail={reminderEmail}
         canCreateAssignedTask={isOwner}
+        lockTaskType={isAssignedOnlyWorkspace ? 'OWNER_ASSIGNED' : ''}
         onOpenEmailSettings={() => setIsEmailSettingsOpen(true)}
         onClose={closeModal}
         onSubmit={handleModalSubmit}

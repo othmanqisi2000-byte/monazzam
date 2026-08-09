@@ -13,6 +13,7 @@ async function getWorkspaceMembership(workspaceId, userId) {
           id: true,
           name: true,
           ownerId: true,
+          taskMode: true,
           createdAt: true,
           updatedAt: true,
         },
@@ -45,6 +46,7 @@ function serializeWorkspaceMembership(membership) {
     name: membership.workspace.name,
     role: membership.role,
     ownerId: membership.workspace.ownerId,
+    taskMode: membership.workspace.taskMode,
     createdAt: membership.workspace.createdAt,
     updatedAt: membership.workspace.updatedAt,
   };

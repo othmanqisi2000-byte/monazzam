@@ -48,6 +48,7 @@ function TaskModal({
   defaultStatus,
   globalReminderEmail,
   canCreateAssignedTask,
+  lockTaskType,
   onOpenEmailSettings,
   onClose,
   onSubmit,
@@ -71,7 +72,7 @@ function TaskModal({
       setTitle(task?.title || '');
       setDescription(task?.description || '');
       setStatus(task?.status || defaultStatus || 'TODO');
-      setTaskType(task?.taskType || 'STANDARD');
+      setTaskType(task?.taskType || lockTaskType || 'STANDARD');
       const { date, time } = splitDueDate(task?.dueDate);
       setDueDateStr(date);
       setDueTimeStr(time);
@@ -81,7 +82,7 @@ function TaskModal({
       setErrors({});
       setIsSubmitting(false);
     }
-  }, [isOpen, task, defaultStatus]);
+  }, [isOpen, task, defaultStatus, lockTaskType]);
 
   if (!isOpen) return null;
 
@@ -198,7 +199,7 @@ function TaskModal({
             />
           </div>
 
-          {canCreateAssignedTask && !isEditMode && (
+          {canCreateAssignedTask && !isEditMode && !lockTaskType && (
             <div>
               <label htmlFor="taskType" className="mb-1 block text-sm font-medium text-slate-700">
                 Task type
@@ -215,6 +216,12 @@ function TaskModal({
               <p className="mt-1 text-xs text-slate-400">
                 Assigned tasks can only be created by the workspace owner, and each member moves their own copy independently.
               </p>
+            </div>
+          )}
+
+          {lockTaskType === 'OWNER_ASSIGNED' && !isEditMode && (
+            <div className="rounded-md border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+              This workspace only allows separate member copies. Shared tasks are disabled here.
             </div>
           )}
 

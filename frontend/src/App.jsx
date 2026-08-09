@@ -147,6 +147,14 @@ function App() {
       <KanbanBoard
         currentUser={currentUser}
         workspaces={workspaces}
+        onRefreshWorkspaces={syncWorkspaces}
+        onUpdateWorkspace={(workspaceId, updates) => {
+          setWorkspaces((prev) =>
+            prev.map((workspace) =>
+              workspace.id === workspaceId ? { ...workspace, ...updates } : workspace
+            )
+          );
+        }}
         activeWorkspaceId={activeWorkspaceId}
         onSelectWorkspace={(workspaceId) => {
           setActiveWorkspaceId(workspaceId);

@@ -33,6 +33,11 @@ enum WorkspaceRole {
   MEMBER
 }
 
+enum WorkspaceTaskMode {
+  SHARED
+  OWNER_ASSIGNED_ONLY
+}
+
 enum WorkspaceInviteStatus {
   PENDING
   ACCEPTED
@@ -68,6 +73,7 @@ model Workspace {
   id        String            @id @default(uuid())
   name      String
   ownerId   String
+  taskMode  WorkspaceTaskMode @default(SHARED)
   owner     User              @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members   WorkspaceMember[]
   invites   WorkspaceInvite[]

@@ -61,6 +61,7 @@ async function getAllTasks(req, res) {
       }
 
       return res.status(200).json({
+        workspaceTaskMode: membership.workspace.taskMode,
         sharedTasks,
         assignedTasks: [],
         assignedOverview: Array.from(overviewMap.values()),
@@ -77,6 +78,7 @@ async function getAllTasks(req, res) {
     });
 
     return res.status(200).json({
+      workspaceTaskMode: membership.workspace.taskMode,
       sharedTasks,
       assignedTasks,
       assignedOverview: [],
@@ -142,6 +144,13 @@ async function createTask(req, res) {
 
     const taskStatus = VALID_STATUSES.includes(status) ? status : 'TODO';
     const nextTaskType = VALID_TASK_TYPES.includes(taskType) ? taskType : 'STANDARD';
+    const isAssignedOnlyWorkspace = membership.workspace.taskMode === 'OWNER_ASSIGNED_ONLY';
+
+    if (isAssignedOnlyWorkspace && nextTaskType === 'STANDARD') {
+      return res.status(403).json({
+        error: 'This workspace only allows separate member copies. Shared tasks are disabled here.',
+      });
+    }
 
     const occurrence = isRecurring ? resolveOccurrenceForToday(normalizedDays, recurringTime) : null;
 
@@ -165,6 +174,18 @@ async function createTask(req, res) {
       }
 
       const createdTasks = await prisma.$transaction(async (tx) => {
+        await tx.workspace.update({
+          where: { id: workspaceId },
+          data: { taskMode: 'OWNER_ASSIGNED_ONLY' },
+        });
+
+        await tx.task.deleteMany({
+          where: {
+            workspaceId,
+            taskType: 'STANDARD',
+          },
+        });
+
         const results = [];
 
         for (const member of members) {
@@ -251,7 +272,7 @@ async function updateTask(req, res) {
     if (!workspaceId) {
       return res.status(400).json({ error: 'workspaceId is required.' });
     }
-    await requireWorkspaceAccess(workspaceId, req.user.id);
+    const membership = await requireWorkspaceAccess(workspaceId, req.user.id);
 
     const { title, description, status, order, dueDate, reminderEmail, isRecurring, recurringDays, recurringTime } =
       req.body;
@@ -259,6 +280,15 @@ async function updateTask(req, res) {
     const existing = await prisma.task.findFirst({ where: { id, workspaceId } });
     if (!existing) {
       return res.status(404).json({ error: 'Task not found.' });
+    }
+
+    if (
+      membership.workspace.taskMode === 'OWNER_ASSIGNED_ONLY' &&
+      existing.taskType === 'STANDARD'
+    ) {
+      return res.status(403).json({
+        error: 'Shared tasks are disabled in this workspace.',
+      });
     }
 
     if (existing.taskType === 'OWNER_ASSIGNED') {
@@ -367,7 +397,7 @@ async function reorderTasks(req, res) {
     if (!workspaceId) {
       return res.status(400).json({ error: 'workspaceId is required.' });
     }
-    await requireWorkspaceAccess(workspaceId, req.user.id);
+    const membership = await requireWorkspaceAccess(workspaceId, req.user.id);
 
     const { tasks } = req.body;
 
@@ -391,6 +421,13 @@ async function reorderTasks(req, res) {
 
     if (ownedTasks.length !== taskIds.length) {
       return res.status(403).json({ error: 'You can only reorder your own tasks.' });
+    }
+
+    if (
+      membership.workspace.taskMode === 'OWNER_ASSIGNED_ONLY' &&
+      ownedTasks.some((task) => task.taskType === 'STANDARD')
+    ) {
+      return res.status(403).json({ error: 'Shared tasks are disabled in this workspace.' });
     }
 
     const hasForbiddenAssignedTask = ownedTasks.some(
