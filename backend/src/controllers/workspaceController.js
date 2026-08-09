@@ -176,9 +176,38 @@ async function addWorkspaceMember(req, res) {
   }
 }
 
+async function leaveWorkspace(req, res) {
+  try {
+    const { workspaceId } = req.params;
+    const membership = await requireWorkspaceAccess(workspaceId, req.user.id);
+
+    if (membership.role === 'OWNER') {
+      return res.status(400).json({
+        error: 'Workspace owners cannot leave their own community.',
+      });
+    }
+
+    await prisma.workspaceMember.deleteMany({
+      where: {
+        workspaceId,
+        userId: req.user.id,
+      },
+    });
+
+    return res.status(200).json({
+      id: workspaceId,
+      message: 'You left the community successfully.',
+    });
+  } catch (error) {
+    console.error('Leave workspace error:', error);
+    return res.status(error.status || 500).json({ error: error.message || 'Failed to leave community.' });
+  }
+}
+
 module.exports = {
   addWorkspaceMember,
   createWorkspace,
+  leaveWorkspace,
   listWorkspaceMembers,
   listWorkspaces,
 };

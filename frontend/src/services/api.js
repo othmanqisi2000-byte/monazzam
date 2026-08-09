@@ -99,6 +99,11 @@ export const workspaceApi = {
     const { data } = await apiClient.post(`/workspaces/${workspaceId}/members`, payload);
     return data;
   },
+
+  leave: async (workspaceId) => {
+    const { data } = await apiClient.delete(`/workspaces/${workspaceId}/members/me`);
+    return data;
+  },
 };
 
 export const taskApi = {

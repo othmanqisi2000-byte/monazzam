@@ -23,6 +23,7 @@ function KanbanBoard({
   activeWorkspaceId,
   onSelectWorkspace,
   onCreateWorkspace,
+  onLeaveWorkspace,
   onLoadWorkspaceMembers,
   onAddWorkspaceMember,
   reminderEmail,
@@ -189,6 +190,7 @@ function KanbanBoard({
         activeWorkspaceId={activeWorkspaceId}
         onSelectWorkspace={onSelectWorkspace}
         onCreateWorkspace={onCreateWorkspace}
+        onLeaveWorkspace={onLeaveWorkspace}
         onLoadMembers={onLoadWorkspaceMembers}
         onAddMember={onAddWorkspaceMember}
       />

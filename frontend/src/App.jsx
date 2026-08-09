@@ -131,6 +131,10 @@ function App() {
           setWorkspaces((prev) => [...prev, createdWorkspace]);
           return createdWorkspace;
         }}
+        onLeaveWorkspace={async (workspaceId) => {
+          await workspaceApi.leave(workspaceId);
+          await syncWorkspaces();
+        }}
         onLoadWorkspaceMembers={(workspaceId) => workspaceApi.getMembers(workspaceId)}
         onAddWorkspaceMember={(workspaceId, payload) => workspaceApi.addMember(workspaceId, payload)}
         reminderEmail={currentUser.reminderEmail || ''}

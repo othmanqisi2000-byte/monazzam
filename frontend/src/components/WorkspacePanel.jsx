@@ -1,16 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { AlertCircle, Plus, Users } from 'lucide-react';
+import { AlertCircle, LogOut, Plus, Users } from 'lucide-react';
 
 function WorkspacePanel({
   workspaces,
   activeWorkspaceId,
   onSelectWorkspace,
   onCreateWorkspace,
+  onLeaveWorkspace,
   onLoadMembers,
   onAddMember,
 }) {
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) || null;
   const canManageMembers = activeWorkspace?.role === 'OWNER';
+  const canLeaveWorkspace = Boolean(activeWorkspace && activeWorkspace.role !== 'OWNER');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceError, setWorkspaceError] = useState('');
@@ -23,6 +25,8 @@ function WorkspacePanel({
   const [memberEmail, setMemberEmail] = useState('');
   const [inviteError, setInviteError] = useState('');
   const [isInviting, setIsInviting] = useState(false);
+  const [leaveError, setLeaveError] = useState('');
+  const [isLeaving, setIsLeaving] = useState(false);
 
   useEffect(() => {
     if (!isMembersOpen) return;
@@ -85,6 +89,26 @@ function WorkspacePanel({
     }
   };
 
+  const handleLeaveWorkspace = async () => {
+    if (!activeWorkspaceId || !canLeaveWorkspace) return;
+
+    const confirmed = window.confirm(
+      `Leave ${activeWorkspace?.name || 'this community'}? You will lose access to its tasks and members.`
+    );
+    if (!confirmed) return;
+
+    setLeaveError('');
+    setIsLeaving(true);
+    try {
+      await onLeaveWorkspace(activeWorkspaceId);
+      setIsMembersOpen(false);
+    } catch (error) {
+      setLeaveError(error.message || 'Failed to leave the community.');
+    } finally {
+      setIsLeaving(false);
+    }
+  };
+
   return (
     <>
       <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -127,8 +151,25 @@ function WorkspacePanel({
               <Users size={16} />
               Members
             </button>
+            {canLeaveWorkspace && (
+              <button
+                type="button"
+                onClick={handleLeaveWorkspace}
+                disabled={isLeaving}
+                className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <LogOut size={16} />
+                {isLeaving ? 'Leaving...' : 'Leave Community'}
+              </button>
+            )}
           </div>
         </div>
+        {leaveError && (
+          <div className="mt-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <AlertCircle size={16} />
+            {leaveError}
+          </div>
+        )}
       </div>
 
       {isCreateOpen && (
@@ -188,6 +229,27 @@ function WorkspacePanel({
             {!canManageMembers && (
               <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 You can view members here, but only the workspace owner can add new people.
+              </div>
+            )}
+            {canLeaveWorkspace && (
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-sm text-slate-600">
+                  Want to leave this community? You can remove yourself at any time.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleLeaveWorkspace}
+                  disabled={isLeaving}
+                  className="shrink-0 rounded-xl border border-red-200 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isLeaving ? 'Leaving...' : 'Leave'}
+                </button>
+              </div>
+            )}
+            {leaveError && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <AlertCircle size={16} />
+                {leaveError}
               </div>
             )}
 
