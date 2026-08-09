@@ -62,7 +62,7 @@ function TaskCard({ task, index, onEdit, onDelete }) {
             <div className="flex-1 min-w-0">
               <h3 className="text-sm font-semibold text-slate-800 break-words">{task.title}</h3>
               {task.description && (
-                <p className="text-xs text-slate-500 mt-1 break-words line-clamp-3">
+                <p className="mt-1 line-clamp-3 whitespace-pre-line break-words text-xs text-slate-500">
                   {task.description}
                 </p>
               )}

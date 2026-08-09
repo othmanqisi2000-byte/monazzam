@@ -2,11 +2,12 @@
   "name": "kanban-backend",
   "version": "1.0.0",
   "description": "Kanban board backend - Node.js, Express, Prisma, Neon PostgreSQL",
-  "main": "src/server.js",
+  "main": "index.js",
   "type": "commonjs",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
+    "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:deploy": "prisma migrate deploy",

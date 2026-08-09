@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? 'http://localhost:5000/api' : 'https://monazzam.onrender.com/api');
+  (import.meta.env.DEV ? 'http://localhost:5000/api' : '/api');
 const AUTH_TOKEN_STORAGE_KEY = 'monazzan_auth_token';
 const ACTIVE_WORKSPACE_STORAGE_KEY = 'monazzan_active_workspace_id';
 
