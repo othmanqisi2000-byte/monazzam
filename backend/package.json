@@ -11,7 +11,9 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev --name init",
     "prisma:deploy": "prisma migrate deploy",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "job:reminders": "node scripts/run-reminders.js",
+    "job:recurring": "node scripts/run-recurring.js"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",

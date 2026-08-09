@@ -19,11 +19,19 @@ async function checkAndSendReminders() {
       where: {
         status: 'TODO',
         dueDate: { not: null },
-        userId: { not: null },
-        OR: [{ reminder30Sent: false }, { reminder5Sent: false }, { reminderDueSent: false }],
+        AND: [
+          { OR: [{ userId: { not: null } }, { assigneeId: { not: null } }] },
+          { OR: [{ reminder30Sent: false }, { reminder5Sent: false }, { reminderDueSent: false }] },
+        ],
       },
       include: {
         user: {
+          select: {
+            email: true,
+            reminderEmail: true,
+          },
+        },
+        assignee: {
           select: {
             email: true,
             reminderEmail: true,
@@ -39,7 +47,10 @@ async function checkAndSendReminders() {
   for (const task of candidates) {
     const dueTime = new Date(task.dueDate).getTime();
     const msRemaining = dueTime - now;
-    const recipientEmail = task.user?.reminderEmail || task.user?.email || task.reminderEmail || null;
+    const recipientEmail =
+      task.taskType === 'OWNER_ASSIGNED'
+        ? task.assignee?.reminderEmail || task.assignee?.email || task.reminderEmail || null
+        : task.user?.reminderEmail || task.user?.email || task.reminderEmail || null;
 
     try {
       if (!task.reminder30Sent && Math.abs(msRemaining - THIRTY_MIN_MS) <= WINDOW_MS) {
