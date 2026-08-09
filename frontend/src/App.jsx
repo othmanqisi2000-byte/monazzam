@@ -66,6 +66,23 @@ function App() {
     restoreSession();
   }, []);
 
+  useEffect(() => {
+    if (!currentUser) return undefined;
+
+    const refreshInvitations = () => {
+      syncInvitations().catch(() => {});
+    };
+
+    refreshInvitations();
+    const intervalId = window.setInterval(refreshInvitations, 15000);
+    window.addEventListener('focus', refreshInvitations);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshInvitations);
+    };
+  }, [currentUser]);
+
   const handleAuthSubmit = async (payload) => {
     const response =
       authMode === 'register' ? await authApi.register(payload) : await authApi.login(payload);
