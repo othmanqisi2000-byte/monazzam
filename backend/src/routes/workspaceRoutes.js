@@ -3,6 +3,7 @@ const { requireAuth } = require('../middleware/authMiddleware');
 const {
   addWorkspaceMember,
   createWorkspace,
+  deleteWorkspace,
   leaveWorkspace,
   listWorkspaceMembers,
   listWorkspaces,
@@ -14,6 +15,7 @@ router.use(requireAuth);
 
 router.get('/', listWorkspaces);
 router.post('/', createWorkspace);
+router.delete('/:workspaceId', deleteWorkspace);
 router.get('/:workspaceId/members', listWorkspaceMembers);
 router.post('/:workspaceId/members', addWorkspaceMember);
 router.delete('/:workspaceId/members/me', leaveWorkspace);

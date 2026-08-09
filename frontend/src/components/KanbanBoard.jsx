@@ -23,6 +23,7 @@ function KanbanBoard({
   activeWorkspaceId,
   onSelectWorkspace,
   onCreateWorkspace,
+  onDeleteWorkspace,
   onLeaveWorkspace,
   onLoadWorkspaceMembers,
   onAddWorkspaceMember,
@@ -190,6 +191,7 @@ function KanbanBoard({
         activeWorkspaceId={activeWorkspaceId}
         onSelectWorkspace={onSelectWorkspace}
         onCreateWorkspace={onCreateWorkspace}
+        onDeleteWorkspace={onDeleteWorkspace}
         onLeaveWorkspace={onLeaveWorkspace}
         onLoadMembers={onLoadWorkspaceMembers}
         onAddMember={onAddWorkspaceMember}

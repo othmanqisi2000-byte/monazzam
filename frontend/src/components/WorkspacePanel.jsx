@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { AlertCircle, LogOut, Plus, Users } from 'lucide-react';
+import { AlertCircle, LogOut, Plus, Trash2, Users } from 'lucide-react';
 
 function WorkspacePanel({
   workspaces,
   activeWorkspaceId,
   onSelectWorkspace,
   onCreateWorkspace,
+  onDeleteWorkspace,
   onLeaveWorkspace,
   onLoadMembers,
   onAddMember,
@@ -13,6 +14,7 @@ function WorkspacePanel({
   const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) || null;
   const canManageMembers = activeWorkspace?.role === 'OWNER';
   const canLeaveWorkspace = Boolean(activeWorkspace && activeWorkspace.role !== 'OWNER');
+  const canDeleteWorkspace = Boolean(activeWorkspace && activeWorkspace.role === 'OWNER');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceError, setWorkspaceError] = useState('');
@@ -27,6 +29,8 @@ function WorkspacePanel({
   const [isInviting, setIsInviting] = useState(false);
   const [leaveError, setLeaveError] = useState('');
   const [isLeaving, setIsLeaving] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     if (!isMembersOpen) return;
@@ -109,6 +113,26 @@ function WorkspacePanel({
     }
   };
 
+  const handleDeleteWorkspace = async () => {
+    if (!activeWorkspaceId || !canDeleteWorkspace) return;
+
+    const confirmed = window.confirm(
+      `Delete ${activeWorkspace?.name || 'this community'}? This will permanently remove its tasks and members.`
+    );
+    if (!confirmed) return;
+
+    setDeleteError('');
+    setIsDeleting(true);
+    try {
+      await onDeleteWorkspace(activeWorkspaceId);
+      setIsMembersOpen(false);
+    } catch (error) {
+      setDeleteError(error.message || 'Failed to delete the community.');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   return (
     <>
       <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -162,12 +186,29 @@ function WorkspacePanel({
                 {isLeaving ? 'Leaving...' : 'Leave Community'}
               </button>
             )}
+            {canDeleteWorkspace && (
+              <button
+                type="button"
+                onClick={handleDeleteWorkspace}
+                disabled={isDeleting}
+                className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Trash2 size={16} />
+                {isDeleting ? 'Deleting...' : 'Delete Community'}
+              </button>
+            )}
           </div>
         </div>
         {leaveError && (
           <div className="mt-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <AlertCircle size={16} />
             {leaveError}
+          </div>
+        )}
+        {deleteError && (
+          <div className="mt-4 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <AlertCircle size={16} />
+            {deleteError}
           </div>
         )}
       </div>
@@ -231,6 +272,21 @@ function WorkspacePanel({
                 You can view members here, but only the workspace owner can add new people.
               </div>
             )}
+            {canDeleteWorkspace && (
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50/60 px-4 py-3">
+                <p className="text-sm text-red-800">
+                  Owners can delete this community, but you must still keep at least one active community.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleDeleteWorkspace}
+                  disabled={isDeleting}
+                  className="shrink-0 rounded-xl border border-red-200 px-3 py-2 text-sm font-medium text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isDeleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            )}
             {canLeaveWorkspace && (
               <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <p className="text-sm text-slate-600">
@@ -250,6 +306,12 @@ function WorkspacePanel({
               <div className="mt-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 <AlertCircle size={16} />
                 {leaveError}
+              </div>
+            )}
+            {deleteError && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <AlertCircle size={16} />
+                {deleteError}
               </div>
             )}
 

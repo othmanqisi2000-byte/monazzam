@@ -204,9 +204,39 @@ async function leaveWorkspace(req, res) {
   }
 }
 
+async function deleteWorkspace(req, res) {
+  try {
+    const { workspaceId } = req.params;
+    await requireWorkspaceAccess(workspaceId, req.user.id, { ownerOnly: true });
+
+    const ownedWorkspaceCount = await prisma.workspace.count({
+      where: { ownerId: req.user.id },
+    });
+
+    if (ownedWorkspaceCount <= 1) {
+      return res.status(400).json({
+        error: 'You must keep at least one active community.',
+      });
+    }
+
+    await prisma.workspace.delete({
+      where: { id: workspaceId },
+    });
+
+    return res.status(200).json({
+      id: workspaceId,
+      message: 'Community deleted successfully.',
+    });
+  } catch (error) {
+    console.error('Delete workspace error:', error);
+    return res.status(error.status || 500).json({ error: error.message || 'Failed to delete community.' });
+  }
+}
+
 module.exports = {
   addWorkspaceMember,
   createWorkspace,
+  deleteWorkspace,
   leaveWorkspace,
   listWorkspaceMembers,
   listWorkspaces,

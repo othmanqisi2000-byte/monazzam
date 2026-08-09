@@ -131,6 +131,10 @@ function App() {
           setWorkspaces((prev) => [...prev, createdWorkspace]);
           return createdWorkspace;
         }}
+        onDeleteWorkspace={async (workspaceId) => {
+          await workspaceApi.delete(workspaceId);
+          await syncWorkspaces();
+        }}
         onLeaveWorkspace={async (workspaceId) => {
           await workspaceApi.leave(workspaceId);
           await syncWorkspaces();

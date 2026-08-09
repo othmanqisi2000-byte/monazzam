@@ -90,6 +90,11 @@ export const workspaceApi = {
     return data;
   },
 
+  delete: async (workspaceId) => {
+    const { data } = await apiClient.delete(`/workspaces/${workspaceId}`);
+    return data;
+  },
+
   getMembers: async (workspaceId) => {
     const { data } = await apiClient.get(`/workspaces/${workspaceId}/members`);
     return data;
