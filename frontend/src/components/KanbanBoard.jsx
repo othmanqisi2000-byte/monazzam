@@ -315,14 +315,12 @@ function KanbanBoard({
             </section>
           )}
 
-          {!isOwner && (
+          {!isOwner && isAssignedOnlyWorkspace && (
             <section className="mt-8">
               <div className="mb-3">
                 <h2 className="text-lg font-semibold text-slate-800">My Assigned Tasks</h2>
                 <p className="text-sm text-slate-500">
-                  {isAssignedOnlyWorkspace
-                    ? 'This workspace only uses separate member copies. Your progress here is independent from everyone else.'
-                    : 'The owner created these for members. Your progress here is separate from everyone else.'}
+                  This workspace only uses separate member copies. Your progress here is independent from everyone else.
                 </p>
               </div>
               <DragDropContext onDragEnd={(result) => handleDragEnd(result, 'assigned')}>
