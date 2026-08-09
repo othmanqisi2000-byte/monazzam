@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Draggable } from '@hello-pangea/dnd';
 import { Pencil, Trash2, GripVertical, Clock, Mail, Repeat, UserPen } from 'lucide-react';
 
@@ -37,7 +37,15 @@ function isOverdue(isoString) {
   return !isNaN(d.getTime()) && d.getTime() < Date.now();
 }
 
+function hasLongDescription(description) {
+  if (!description) return false;
+  return description.length > 140 || description.includes('\n');
+}
+
 function TaskCard({ task, index, onEdit, onDelete }) {
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
+  const showReadMore = hasLongDescription(task.description);
+
   return (
     <Draggable draggableId={task.id} index={index}>
       {(provided, snapshot) => (
@@ -62,9 +70,24 @@ function TaskCard({ task, index, onEdit, onDelete }) {
             <div className="flex-1 min-w-0">
               <h3 className="text-sm font-semibold text-slate-800 break-words">{task.title}</h3>
               {task.description && (
-                <p className="mt-1 line-clamp-3 whitespace-pre-line break-words text-xs text-slate-500">
-                  {task.description}
-                </p>
+                <div className="mt-1">
+                  <p
+                    className={`whitespace-pre-line break-words text-xs text-slate-500 ${
+                      isDescriptionExpanded ? '' : 'line-clamp-3'
+                    }`}
+                  >
+                    {task.description}
+                  </p>
+                  {showReadMore && (
+                    <button
+                      type="button"
+                      onClick={() => setIsDescriptionExpanded((current) => !current)}
+                      className="mt-1 text-[11px] font-medium text-indigo-600 transition hover:text-indigo-700"
+                    >
+                      {isDescriptionExpanded ? 'Read less' : 'Read more'}
+                    </button>
+                  )}
+                </div>
               )}
               {(task.lastEditedByName || task.lastMovedByName) && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
