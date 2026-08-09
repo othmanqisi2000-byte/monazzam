@@ -3,6 +3,7 @@ const { WEEKDAY_CODES, resolveOccurrenceForToday } = require('../lib/recurrence'
 const { requireWorkspaceAccess } = require('../lib/workspaceAccess');
 
 const VALID_STATUSES = ['TODO', 'IN_PROGRESS', 'DONE'];
+const VALID_TASK_TYPES = ['STANDARD', 'OWNER_ASSIGNED'];
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
@@ -22,12 +23,64 @@ async function getAllTasks(req, res) {
       return res.status(400).json({ error: 'workspaceId is required.' });
     }
 
-    await requireWorkspaceAccess(workspaceId, req.user.id);
-    const tasks = await prisma.task.findMany({
-      where: { workspaceId },
+    const membership = await requireWorkspaceAccess(workspaceId, req.user.id);
+
+    const sharedTasks = await prisma.task.findMany({
+      where: { workspaceId, taskType: 'STANDARD' },
       orderBy: [{ status: 'asc' }, { order: 'asc' }],
     });
-    return res.status(200).json(tasks);
+
+    if (membership.role === 'OWNER') {
+      const assignedTasks = await prisma.task.findMany({
+        where: { workspaceId, taskType: 'OWNER_ASSIGNED' },
+        include: {
+          assignee: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+        orderBy: [{ assignee: { name: 'asc' } }, { status: 'asc' }, { order: 'asc' }],
+      });
+
+      const overviewMap = new Map();
+      for (const task of assignedTasks) {
+        if (!task.assignee) continue;
+
+        if (!overviewMap.has(task.assigneeId)) {
+          overviewMap.set(task.assigneeId, {
+            userId: task.assignee.id,
+            userName: task.assignee.name,
+            userEmail: task.assignee.email,
+            counts: { TODO: 0, IN_PROGRESS: 0, DONE: 0 },
+            tasks: [],
+          });
+        }
+
+        const group = overviewMap.get(task.assigneeId);
+        group.counts[task.status] += 1;
+        group.tasks.push(task);
+      }
+
+      return res.status(200).json({
+        sharedTasks,
+        assignedTasks: [],
+        assignedOverview: Array.from(overviewMap.values()),
+      });
+    }
+
+    const assignedTasks = await prisma.task.findMany({
+      where: {
+        workspaceId,
+        taskType: 'OWNER_ASSIGNED',
+        assigneeId: req.user.id,
+      },
+      orderBy: [{ status: 'asc' }, { order: 'asc' }],
+    });
+
+    return res.status(200).json({
+      sharedTasks,
+      assignedTasks,
+      assignedOverview: [],
+    });
   } catch (error) {
     console.error('Error fetching tasks:', error);
     return res.status(error.status || 500).json({ error: error.message || 'Failed to fetch tasks.' });
@@ -45,9 +98,19 @@ async function createTask(req, res) {
       return res.status(400).json({ error: 'workspaceId is required.' });
     }
 
-    await requireWorkspaceAccess(workspaceId, req.user.id);
+    const membership = await requireWorkspaceAccess(workspaceId, req.user.id);
 
-    const { title, description, status, dueDate, reminderEmail, isRecurring, recurringDays, recurringTime } =
+    const {
+      title,
+      description,
+      status,
+      dueDate,
+      reminderEmail,
+      isRecurring,
+      recurringDays,
+      recurringTime,
+      taskType,
+    } =
       req.body;
 
     if (!title || typeof title !== 'string' || !title.trim()) {
@@ -78,17 +141,78 @@ async function createTask(req, res) {
     }
 
     const taskStatus = VALID_STATUSES.includes(status) ? status : 'TODO';
+    const nextTaskType = VALID_TASK_TYPES.includes(taskType) ? taskType : 'STANDARD';
+
+    const occurrence = isRecurring ? resolveOccurrenceForToday(normalizedDays, recurringTime) : null;
+
+    if (nextTaskType === 'OWNER_ASSIGNED') {
+      if (membership.role !== 'OWNER') {
+        return res.status(403).json({ error: 'Only the workspace owner can create assigned tasks.' });
+      }
+
+      const members = await prisma.workspaceMember.findMany({
+        where: { workspaceId, role: 'MEMBER' },
+        include: {
+          user: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+
+      if (members.length === 0) {
+        return res.status(400).json({ error: 'Add at least one member before creating an assigned task.' });
+      }
+
+      const createdTasks = await prisma.$transaction(async (tx) => {
+        const results = [];
+
+        for (const member of members) {
+          const lastTask = await tx.task.findFirst({
+            where: {
+              workspaceId,
+              taskType: 'OWNER_ASSIGNED',
+              assigneeId: member.userId,
+              status: taskStatus,
+            },
+            orderBy: { order: 'desc' },
+          });
+
+          const nextOrder = lastTask ? lastTask.order + 1 : 0;
+          const createdTask = await tx.task.create({
+            data: {
+              userId: req.user.id,
+              assigneeId: member.userId,
+              workspaceId,
+              title: title.trim(),
+              description: description ? description.trim() : null,
+              taskType: 'OWNER_ASSIGNED',
+              status: taskStatus,
+              order: nextOrder,
+              dueDate: occurrence ? occurrence.dueDate : dueDate ? new Date(dueDate) : null,
+              reminderEmail: reminderEmail ? reminderEmail.trim() : null,
+              isRecurring: Boolean(isRecurring),
+              recurringDays: normalizedDays,
+              recurringTime: isRecurring ? recurringTime || null : null,
+              lastRecurredOn: occurrence ? occurrence.lastRecurredOn : null,
+            },
+          });
+
+          results.push(createdTask);
+        }
+
+        return results;
+      });
+
+      return res.status(201).json(createdTasks);
+    }
 
     const lastTask = await prisma.task.findFirst({
-      where: { status: taskStatus, workspaceId },
+      where: { status: taskStatus, workspaceId, taskType: 'STANDARD' },
       orderBy: { order: 'desc' },
     });
 
     const nextOrder = lastTask ? lastTask.order + 1 : 0;
-
-    // For recurring tasks, if today is one of the chosen days, activate the
-    // task immediately for today instead of waiting for the daily job.
-    const occurrence = isRecurring ? resolveOccurrenceForToday(normalizedDays, recurringTime) : null;
 
     const task = await prisma.task.create({
       data: {
@@ -96,6 +220,7 @@ async function createTask(req, res) {
         workspaceId,
         title: title.trim(),
         description: description ? description.trim() : null,
+        taskType: 'STANDARD',
         status: taskStatus,
         order: nextOrder,
         dueDate: occurrence ? occurrence.dueDate : dueDate ? new Date(dueDate) : null,
@@ -134,6 +259,12 @@ async function updateTask(req, res) {
     const existing = await prisma.task.findFirst({ where: { id, workspaceId } });
     if (!existing) {
       return res.status(404).json({ error: 'Task not found.' });
+    }
+
+    if (existing.taskType === 'OWNER_ASSIGNED') {
+      if (existing.assigneeId !== req.user.id) {
+        return res.status(403).json({ error: 'Only the assigned member can update this task.' });
+      }
     }
 
     if (status && !VALID_STATUSES.includes(status)) {
@@ -255,11 +386,19 @@ async function reorderTasks(req, res) {
     const taskIds = tasks.map((task) => task.id);
     const ownedTasks = await prisma.task.findMany({
       where: { id: { in: taskIds }, workspaceId },
-      select: { id: true },
+      select: { id: true, taskType: true, assigneeId: true },
     });
 
     if (ownedTasks.length !== taskIds.length) {
       return res.status(403).json({ error: 'You can only reorder your own tasks.' });
+    }
+
+    const hasForbiddenAssignedTask = ownedTasks.some(
+      (task) => task.taskType === 'OWNER_ASSIGNED' && task.assigneeId !== req.user.id
+    );
+
+    if (hasForbiddenAssignedTask) {
+      return res.status(403).json({ error: 'Only the assigned member can move this task.' });
     }
 
     // Run all updates in a single transaction so the board state is never
@@ -296,11 +435,15 @@ async function deleteTask(req, res) {
     if (!workspaceId) {
       return res.status(400).json({ error: 'workspaceId is required.' });
     }
-    await requireWorkspaceAccess(workspaceId, req.user.id);
+    const membership = await requireWorkspaceAccess(workspaceId, req.user.id);
 
     const existing = await prisma.task.findFirst({ where: { id, workspaceId } });
     if (!existing) {
       return res.status(404).json({ error: 'Task not found.' });
+    }
+
+    if (existing.taskType === 'OWNER_ASSIGNED' && membership.role !== 'OWNER') {
+      return res.status(403).json({ error: 'Only the workspace owner can delete assigned tasks.' });
     }
 
     await prisma.task.delete({ where: { id } });

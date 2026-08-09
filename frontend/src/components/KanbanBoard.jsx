@@ -5,6 +5,7 @@ import Column from './Column.jsx';
 import TaskModal from './TaskModal.jsx';
 import EmailSettingsModal from './EmailSettingsModal.jsx';
 import WorkspacePanel from './WorkspacePanel.jsx';
+import TaskCard from './TaskCard.jsx';
 import { taskApi } from '../services/api.js';
 
 const COLUMNS = [
@@ -15,6 +16,25 @@ const COLUMNS = [
 
 function reindex(taskList) {
   return taskList.map((t, index) => ({ ...t, order: index }));
+}
+
+function createEmptyColumns() {
+  return { TODO: [], IN_PROGRESS: [], DONE: [] };
+}
+
+function groupTasksByColumn(tasks) {
+  const grouped = createEmptyColumns();
+  for (const task of tasks) {
+    if (grouped[task.status]) {
+      grouped[task.status].push(task);
+    }
+  }
+
+  for (const key of Object.keys(grouped)) {
+    grouped[key].sort((a, b) => a.order - b.order);
+  }
+
+  return grouped;
 }
 
 function KanbanBoard({
@@ -32,7 +52,12 @@ function KanbanBoard({
   reminderEmail,
   onSaveReminderEmail,
 }) {
-  const [tasks, setTasks] = useState([]);
+  const activeWorkspace = workspaces.find((workspace) => workspace.id === activeWorkspaceId) || null;
+  const isOwner = activeWorkspace?.role === 'OWNER';
+
+  const [sharedTasks, setSharedTasks] = useState([]);
+  const [assignedTasks, setAssignedTasks] = useState([]);
+  const [assignedOverview, setAssignedOverview] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [modalState, setModalState] = useState({ isOpen: false, task: null, defaultStatus: 'TODO' });
@@ -42,7 +67,9 @@ function KanbanBoard({
 
   const loadTasks = useCallback(async () => {
     if (!activeWorkspaceId) {
-      setTasks([]);
+      setSharedTasks([]);
+      setAssignedTasks([]);
+      setAssignedOverview([]);
       setIsLoading(false);
       return;
     }
@@ -51,7 +78,9 @@ function KanbanBoard({
     setError(null);
     try {
       const data = await taskApi.getAllTasks(activeWorkspaceId);
-      setTasks(data);
+      setSharedTasks(data.sharedTasks || []);
+      setAssignedTasks(data.assignedTasks || []);
+      setAssignedOverview(data.assignedOverview || []);
     } catch (err) {
       setError(err.message || 'Failed to load tasks.');
     } finally {
@@ -63,32 +92,24 @@ function KanbanBoard({
     loadTasks();
   }, [loadTasks]);
 
-  const tasksByColumn = useMemo(() => {
-    const grouped = { TODO: [], IN_PROGRESS: [], DONE: [] };
-    for (const task of tasks) {
-      if (grouped[task.status]) grouped[task.status].push(task);
-    }
-    for (const key of Object.keys(grouped)) {
-      grouped[key].sort((a, b) => a.order - b.order);
-    }
-    return grouped;
-  }, [tasks]);
+  const sharedTasksByColumn = useMemo(() => groupTasksByColumn(sharedTasks), [sharedTasks]);
+  const assignedTasksByColumn = useMemo(() => groupTasksByColumn(assignedTasks), [assignedTasks]);
 
-  // --- Drag and drop handler ---
-  const handleDragEnd = async (result) => {
-    const { source, destination, draggableId } = result;
+  const handleDragEnd = async (result, boardType) => {
+    const { source, destination } = result;
 
     if (!destination) return;
     if (source.droppableId === destination.droppableId && source.index === destination.index) {
       return;
     }
 
-    const sourceStatus = source.droppableId;
-    const destStatus = destination.droppableId;
+    const sourceStatus = source.droppableId.replace(`${boardType}-`, '');
+    const destStatus = destination.droppableId.replace(`${boardType}-`, '');
+    const stateSetter = boardType === 'shared' ? setSharedTasks : setAssignedTasks;
+    const taskList = boardType === 'shared' ? sharedTasks : assignedTasks;
+    const tasksByColumn = boardType === 'shared' ? sharedTasksByColumn : assignedTasksByColumn;
 
-    const previousTasks = tasks;
-
-    // Build the new local state optimistically.
+    const previousTasks = taskList;
     const sourceList = [...tasksByColumn[sourceStatus]];
     const [movedTask] = sourceList.splice(source.index, 1);
 
@@ -103,21 +124,16 @@ function KanbanBoard({
 
     const reindexedSource = reindex(sourceList);
     const reindexedDest = sourceStatus === destStatus ? reindexedSource : reindex(destList);
-
-    const otherTasks = tasks.filter(
-      (t) => t.status !== sourceStatus && t.status !== destStatus
-    );
-
+    const otherTasks = taskList.filter((t) => t.status !== sourceStatus && t.status !== destStatus);
     const nextTasks =
       sourceStatus === destStatus
         ? [...otherTasks, ...reindexedDest]
         : [...otherTasks, ...reindexedSource, ...reindexedDest];
 
-    setTasks(nextTasks);
+    stateSetter(nextTasks);
     setIsSavingOrder(true);
     setError(null);
 
-    // Only the affected column(s) need to be persisted.
     const affectedTasks =
       sourceStatus === destStatus
         ? reindexedDest.map((t) => ({ id: t.id, status: t.status, order: t.order }))
@@ -131,13 +147,12 @@ function KanbanBoard({
       await taskApi.reorderTasks(activeWorkspaceId, affectedTasks);
     } catch (err) {
       setError(err.message || 'Failed to save the new order. Reverting.');
-      setTasks(previousTasks);
+      stateSetter(previousTasks);
     } finally {
       setIsSavingOrder(false);
     }
   };
 
-  // --- Create / Edit ---
   const openCreateModal = (status) => {
     setModalState({ isOpen: true, task: null, defaultStatus: status });
   };
@@ -153,27 +168,48 @@ function KanbanBoard({
   const handleModalSubmit = async (formData) => {
     if (modalState.task) {
       const updated = await taskApi.updateTask(activeWorkspaceId, modalState.task.id, formData);
-      setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-    } else {
-      const created = await taskApi.createTask(activeWorkspaceId, formData);
-      setTasks((prev) => [...prev, created]);
+      if (updated.taskType === 'OWNER_ASSIGNED') {
+        setAssignedTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      } else {
+        setSharedTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+      }
+      return;
     }
+
+    const created = await taskApi.createTask(activeWorkspaceId, formData);
+    if (Array.isArray(created)) {
+      if (isOwner) {
+        await loadTasks();
+      } else {
+        setAssignedTasks((prev) => [...prev, ...created]);
+      }
+      return;
+    }
+
+    setSharedTasks((prev) => [...prev, created]);
   };
 
-  // --- Delete ---
   const requestDelete = (task) => setDeleteTarget(task);
   const cancelDelete = () => setDeleteTarget(null);
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-    const previousTasks = tasks;
-    setTasks((prev) => prev.filter((t) => t.id !== deleteTarget.id));
+
+    const isAssigned = deleteTarget.taskType === 'OWNER_ASSIGNED';
+    const previousTasks = isAssigned ? assignedTasks : sharedTasks;
+    const stateSetter = isAssigned ? setAssignedTasks : setSharedTasks;
+
+    stateSetter((prev) => prev.filter((t) => t.id !== deleteTarget.id));
     setDeleteTarget(null);
+
     try {
       await taskApi.deleteTask(activeWorkspaceId, deleteTarget.id);
+      if (isOwner && isAssigned) {
+        await loadTasks();
+      }
     } catch (err) {
       setError(err.message || 'Failed to delete task.');
-      setTasks(previousTasks);
+      stateSetter(previousTasks);
     }
   };
 
@@ -230,21 +266,126 @@ function KanbanBoard({
       </div>
 
       {activeWorkspaceId ? (
-        <DragDropContext onDragEnd={handleDragEnd}>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
-            {COLUMNS.map((col) => (
-              <Column
-                key={col.id}
-                columnId={col.id}
-                title={col.title}
-                tasks={tasksByColumn[col.id]}
-                onAddTask={openCreateModal}
-                onEditTask={openEditModal}
-                onDeleteTask={requestDelete}
-              />
-            ))}
-          </div>
-        </DragDropContext>
+        <>
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-800">Shared Tasks</h2>
+                <p className="text-sm text-slate-500">These tasks stay visible to everyone in the community.</p>
+              </div>
+            </div>
+            <DragDropContext onDragEnd={(result) => handleDragEnd(result, 'shared')}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
+                {COLUMNS.map((col) => (
+                  <Column
+                    key={`shared-${col.id}`}
+                    columnId={col.id}
+                    droppableId={`shared-${col.id}`}
+                    title={col.title}
+                    tasks={sharedTasksByColumn[col.id]}
+                    onAddTask={openCreateModal}
+                    onEditTask={openEditModal}
+                    onDeleteTask={requestDelete}
+                  />
+                ))}
+              </div>
+            </DragDropContext>
+          </section>
+
+          {!isOwner && (
+            <section className="mt-8">
+              <div className="mb-3">
+                <h2 className="text-lg font-semibold text-slate-800">My Assigned Tasks</h2>
+                <p className="text-sm text-slate-500">
+                  The owner created these for members. Your progress here is separate from everyone else.
+                </p>
+              </div>
+              <DragDropContext onDragEnd={(result) => handleDragEnd(result, 'assigned')}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-start">
+                  {COLUMNS.map((col) => (
+                    <Column
+                      key={`assigned-${col.id}`}
+                      columnId={col.id}
+                      droppableId={`assigned-${col.id}`}
+                      title={col.title}
+                      tasks={assignedTasksByColumn[col.id]}
+                      onAddTask={openCreateModal}
+                      onEditTask={openEditModal}
+                      onDeleteTask={requestDelete}
+                      showAddButton={false}
+                      taskCardProps={{ canDelete: false }}
+                    />
+                  ))}
+                </div>
+              </DragDropContext>
+            </section>
+          )}
+
+          {isOwner && (
+            <section className="mt-8">
+              <div className="mb-3">
+                <h2 className="text-lg font-semibold text-slate-800">Member Progress</h2>
+                <p className="text-sm text-slate-500">
+                  Assigned tasks create a separate copy for each member. You can watch their progress here.
+                </p>
+              </div>
+
+              {assignedOverview.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500">
+                  No assigned member tasks yet.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {assignedOverview.map((member) => (
+                    <div key={member.userId} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <h3 className="text-base font-semibold text-slate-800">{member.userName}</h3>
+                          <p className="text-sm text-slate-500">{member.userEmail}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-xs">
+                          <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">To Do {member.counts.TODO}</span>
+                          <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-700">In Progress {member.counts.IN_PROGRESS}</span>
+                          <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">Done {member.counts.DONE}</span>
+                        </div>
+                      </div>
+                      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+                        {COLUMNS.map((column) => {
+                          const memberTasks = member.tasks.filter((task) => task.status === column.id);
+                          return (
+                            <div key={`${member.userId}-${column.id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                              <div className="mb-3 flex items-center gap-2">
+                                <span className="text-sm font-semibold text-slate-700">{column.title}</span>
+                                <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">{memberTasks.length}</span>
+                              </div>
+                              {memberTasks.length === 0 ? (
+                                <p className="py-4 text-center text-xs text-slate-400">No tasks here</p>
+                              ) : (
+                                memberTasks.map((task, index) => (
+                                  <TaskCard
+                                    key={task.id}
+                                    task={task}
+                                    index={index}
+                                    onEdit={() => {}}
+                                    onDelete={() => {}}
+                                    isDraggable={false}
+                                    canEdit={false}
+                                    canDelete={false}
+                                    assigneeLabel="Member copy"
+                                  />
+                                ))
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+        </>
       ) : (
         <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center text-sm text-slate-500">
           Create or choose a workspace to start collaborating on tasks.
@@ -263,6 +404,7 @@ function KanbanBoard({
         task={modalState.task}
         defaultStatus={modalState.defaultStatus}
         globalReminderEmail={reminderEmail}
+        canCreateAssignedTask={isOwner}
         onOpenEmailSettings={() => setIsEmailSettingsOpen(true)}
         onClose={closeModal}
         onSubmit={handleModalSubmit}

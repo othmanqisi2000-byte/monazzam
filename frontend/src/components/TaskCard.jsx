@@ -42,105 +42,127 @@ function hasLongDescription(description) {
   return description.length > 140 || description.includes('\n');
 }
 
-function TaskCard({ task, index, onEdit, onDelete }) {
+function TaskCard({
+  task,
+  index,
+  onEdit,
+  onDelete,
+  isDraggable = true,
+  canEdit = true,
+  canDelete = true,
+  assigneeLabel,
+}) {
   const [isDescriptionExpanded, setIsDescriptionExpanded] = useState(false);
   const showReadMore = hasLongDescription(task.description);
 
-  return (
-    <Draggable draggableId={task.id} index={index}>
-      {(provided, snapshot) => (
-        <div
-          ref={provided.innerRef}
-          {...provided.draggableProps}
-          className={`group bg-white rounded-lg border border-slate-200 border-l-4 ${
-            STATUS_ACCENT[task.status]
-          } shadow-sm p-3 mb-2 transition-shadow ${
-            snapshot.isDragging ? 'shadow-lg ring-2 ring-indigo-300 rotate-1' : 'hover:shadow-md'
-          }`}
-        >
-          <div className="flex items-start gap-2">
-            <div
-              {...provided.dragHandleProps}
-              className="mt-0.5 text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing shrink-0"
-              aria-label="Drag handle"
-            >
-              <GripVertical size={16} />
-            </div>
+  const content = (
+    <div
+      className={`group bg-white rounded-lg border border-slate-200 border-l-4 ${
+        STATUS_ACCENT[task.status]
+      } shadow-sm p-3 mb-2 transition-shadow hover:shadow-md`}
+    >
+      <div className="flex items-start gap-2">
+        {isDraggable ? (
+          <div
+            className="mt-0.5 text-slate-300 hover:text-slate-500 cursor-grab active:cursor-grabbing shrink-0"
+            aria-label="Drag handle"
+          >
+            <GripVertical size={16} />
+          </div>
+        ) : (
+          <div className="mt-0.5 shrink-0 text-slate-200">
+            <GripVertical size={16} />
+          </div>
+        )}
 
-            <div className="flex-1 min-w-0">
-              <h3 className="text-sm font-semibold text-slate-800 break-words">{task.title}</h3>
-              {task.description && (
-                <div className="mt-1">
-                  <p
-                    className={`whitespace-pre-line break-words text-xs text-slate-500 ${
-                      isDescriptionExpanded ? '' : 'line-clamp-3'
-                    }`}
-                  >
-                    {task.description}
-                  </p>
-                  {showReadMore && (
-                    <button
-                      type="button"
-                      onClick={() => setIsDescriptionExpanded((current) => !current)}
-                      className="mt-1 text-[11px] font-medium text-indigo-600 transition hover:text-indigo-700"
-                    >
-                      {isDescriptionExpanded ? 'Read less' : 'Read more'}
-                    </button>
-                  )}
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-slate-800 break-words">{task.title}</h3>
+            {task.taskType === 'OWNER_ASSIGNED' && (
+              <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
+                Assigned
+              </span>
+            )}
+            {assigneeLabel && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+                {assigneeLabel}
+              </span>
+            )}
+          </div>
+          {task.description && (
+            <div className="mt-1">
+              <p
+                className={`whitespace-pre-line break-words text-xs text-slate-500 ${
+                  isDescriptionExpanded ? '' : 'line-clamp-3'
+                }`}
+              >
+                {task.description}
+              </p>
+              {showReadMore && (
+                <button
+                  type="button"
+                  onClick={() => setIsDescriptionExpanded((current) => !current)}
+                  className="mt-1 text-[11px] font-medium text-indigo-600 transition hover:text-indigo-700"
+                >
+                  {isDescriptionExpanded ? 'Read less' : 'Read more'}
+                </button>
+              )}
+            </div>
+          )}
+          {(task.lastEditedByName || task.lastMovedByName) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {task.lastEditedByName && (
+                <div className="inline-flex items-center gap-1.5 rounded bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
+                  <UserPen size={11} />
+                  <span>Edited by {task.lastEditedByName}</span>
                 </div>
               )}
-              {(task.lastEditedByName || task.lastMovedByName) && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {task.lastEditedByName && (
-                    <div className="inline-flex items-center gap-1.5 rounded bg-slate-100 px-2 py-1 text-[11px] text-slate-600">
-                      <UserPen size={11} />
-                      <span>Edited by {task.lastEditedByName}</span>
-                    </div>
-                  )}
-                  {task.lastMovedByName && (
-                    <div className="inline-flex items-center gap-1.5 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
-                      <UserPen size={11} />
-                      <span>Moved by {task.lastMovedByName}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-              {(task.dueDate || task.isRecurring) && (
-                <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                  {task.isRecurring && (
-                    <div
-                      className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded text-purple-600 bg-purple-50"
-                      title={`Repeats: ${formatRecurringDays(task.recurringDays)}`}
-                    >
-                      <Repeat size={11} />
-                      {formatRecurringDays(task.recurringDays)}
-                    </div>
-                  )}
-                  {task.dueDate && (
-                    <div
-                      className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded ${
-                        isOverdue(task.dueDate) && task.status !== 'DONE'
-                          ? 'text-red-600 bg-red-50'
-                          : 'text-slate-500 bg-slate-100'
-                      }`}
-                    >
-                      <Clock size={11} />
-                      {formatDueDate(task.dueDate)}
-                    </div>
-                  )}
-                  {task.reminderEmail && (
-                    <div
-                      className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded text-indigo-600 bg-indigo-50"
-                      title={`Reminders to ${task.reminderEmail}`}
-                    >
-                      <Mail size={11} />
-                    </div>
-                  )}
+              {task.lastMovedByName && (
+                <div className="inline-flex items-center gap-1.5 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-700">
+                  <UserPen size={11} />
+                  <span>Moved by {task.lastMovedByName}</span>
                 </div>
               )}
             </div>
+          )}
+          {(task.dueDate || task.isRecurring) && (
+            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+              {task.isRecurring && (
+                <div
+                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded text-purple-600 bg-purple-50"
+                  title={`Repeats: ${formatRecurringDays(task.recurringDays)}`}
+                >
+                  <Repeat size={11} />
+                  {formatRecurringDays(task.recurringDays)}
+                </div>
+              )}
+              {task.dueDate && (
+                <div
+                  className={`inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded ${
+                    isOverdue(task.dueDate) && task.status !== 'DONE'
+                      ? 'text-red-600 bg-red-50'
+                      : 'text-slate-500 bg-slate-100'
+                  }`}
+                >
+                  <Clock size={11} />
+                  {formatDueDate(task.dueDate)}
+                </div>
+              )}
+              {task.reminderEmail && (
+                <div
+                  className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded text-indigo-600 bg-indigo-50"
+                  title={`Reminders to ${task.reminderEmail}`}
+                >
+                  <Mail size={11} />
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
-            <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+        {(canEdit || canDelete) && (
+          <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+            {canEdit && (
               <button
                 type="button"
                 onClick={() => onEdit(task)}
@@ -149,6 +171,8 @@ function TaskCard({ task, index, onEdit, onDelete }) {
               >
                 <Pencil size={14} />
               </button>
+            )}
+            {canDelete && (
               <button
                 type="button"
                 onClick={() => onDelete(task)}
@@ -157,7 +181,27 @@ function TaskCard({ task, index, onEdit, onDelete }) {
               >
                 <Trash2 size={14} />
               </button>
-            </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  if (!isDraggable) {
+    return content;
+  }
+
+  return (
+    <Draggable draggableId={task.id} index={index}>
+      {(provided, snapshot) => (
+        <div
+          ref={provided.innerRef}
+          {...provided.draggableProps}
+          className={snapshot.isDragging ? 'rotate-1' : ''}
+        >
+          <div {...provided.dragHandleProps} className={snapshot.isDragging ? 'shadow-lg ring-2 ring-indigo-300 rounded-lg' : ''}>
+            {content}
           </div>
         </div>
       )}

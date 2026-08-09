@@ -39,6 +39,11 @@ enum WorkspaceInviteStatus {
   DECLINED
 }
 
+enum TaskType {
+  STANDARD
+  OWNER_ASSIGNED
+}
+
 model User {
   id                  String            @id @default(uuid())
   name                String
@@ -48,6 +53,7 @@ model User {
   tasks               Task[]
   editedTasks         Task[]            @relation("TaskLastEditedBy")
   movedTasks          Task[]            @relation("TaskLastMovedBy")
+  assignedTasks       Task[]            @relation("TaskAssignee")
   workspaceMemberships WorkspaceMember[]
   ownedWorkspaces     Workspace[]       @relation("WorkspaceOwner")
   sentWorkspaceInvites WorkspaceInvite[] @relation("WorkspaceInviteSender")
@@ -110,6 +116,8 @@ model Task {
   id              String     @id @default(uuid())
   userId          String?
   user            User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assigneeId      String?
+  assignee        User?      @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: Cascade)
   workspaceId     String?
   workspace       Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   lastEditedById  String?
@@ -122,6 +130,7 @@ model Task {
   lastMovedAt     DateTime?
   title           String
   description     String?
+  taskType        TaskType   @default(STANDARD)
   status          TaskStatus @default(TODO)
   order           Int        @default(0)
   dueDate         DateTime?
@@ -137,5 +146,6 @@ model Task {
   updatedAt       DateTime   @updatedAt
 
   @@index([workspaceId, status, order])
+  @@index([workspaceId, taskType, assigneeId, status, order])
   @@map("tasks")
 }

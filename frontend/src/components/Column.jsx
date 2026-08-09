@@ -9,8 +9,19 @@ const COLUMN_STYLES = {
   DONE: { dot: 'bg-emerald-400', header: 'text-emerald-700' },
 };
 
-function Column({ columnId, title, tasks, onAddTask, onEditTask, onDeleteTask }) {
+function Column({
+  columnId,
+  title,
+  tasks,
+  onAddTask,
+  onEditTask,
+  onDeleteTask,
+  droppableId,
+  showAddButton = true,
+  taskCardProps = {},
+}) {
   const styles = COLUMN_STYLES[columnId];
+  const resolvedDroppableId = droppableId || columnId;
 
   return (
     <div className="flex flex-col bg-slate-50 rounded-xl border border-slate-200 w-full min-w-[280px] max-h-full">
@@ -22,17 +33,19 @@ function Column({ columnId, title, tasks, onAddTask, onEditTask, onDeleteTask })
             {tasks.length}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => onAddTask(columnId)}
-          className="p-1 rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"
-          aria-label={`Add task to ${title}`}
-        >
-          <Plus size={16} />
-        </button>
+        {showAddButton && (
+          <button
+            type="button"
+            onClick={() => onAddTask(columnId)}
+            className="p-1 rounded text-slate-400 hover:text-indigo-600 hover:bg-indigo-50"
+            aria-label={`Add task to ${title}`}
+          >
+            <Plus size={16} />
+          </button>
+        )}
       </div>
 
-      <Droppable droppableId={columnId}>
+      <Droppable droppableId={resolvedDroppableId}>
         {(provided, snapshot) => (
           <div
             ref={provided.innerRef}
@@ -51,6 +64,7 @@ function Column({ columnId, title, tasks, onAddTask, onEditTask, onDeleteTask })
                 index={index}
                 onEdit={onEditTask}
                 onDelete={onDeleteTask}
+                {...taskCardProps}
               />
             ))}
             {provided.placeholder}

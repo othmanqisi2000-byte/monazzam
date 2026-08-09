@@ -47,6 +47,7 @@ function TaskModal({
   task,
   defaultStatus,
   globalReminderEmail,
+  canCreateAssignedTask,
   onOpenEmailSettings,
   onClose,
   onSubmit,
@@ -54,6 +55,7 @@ function TaskModal({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [status, setStatus] = useState('TODO');
+  const [taskType, setTaskType] = useState('STANDARD');
   const [dueDateStr, setDueDateStr] = useState('');
   const [dueTimeStr, setDueTimeStr] = useState('');
   const [isRecurring, setIsRecurring] = useState(false);
@@ -69,6 +71,7 @@ function TaskModal({
       setTitle(task?.title || '');
       setDescription(task?.description || '');
       setStatus(task?.status || defaultStatus || 'TODO');
+      setTaskType(task?.taskType || 'STANDARD');
       const { date, time } = splitDueDate(task?.dueDate);
       setDueDateStr(date);
       setDueTimeStr(time);
@@ -117,6 +120,7 @@ function TaskModal({
       await onSubmit({
         title: title.trim(),
         description: description.trim(),
+        taskType,
         status,
         dueDate,
         reminderEmail: hasSchedule && globalReminderEmail ? globalReminderEmail : null,
@@ -193,6 +197,32 @@ function TaskModal({
               className="w-full resize-none rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
             />
           </div>
+
+          {canCreateAssignedTask && !isEditMode && (
+            <div>
+              <label htmlFor="taskType" className="mb-1 block text-sm font-medium text-slate-700">
+                Task type
+              </label>
+              <select
+                id="taskType"
+                value={taskType}
+                onChange={(e) => setTaskType(e.target.value)}
+                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              >
+                <option value="STANDARD">Shared task for everyone</option>
+                <option value="OWNER_ASSIGNED">Separate copy for each member</option>
+              </select>
+              <p className="mt-1 text-xs text-slate-400">
+                Assigned tasks can only be created by the workspace owner, and each member moves their own copy independently.
+              </p>
+            </div>
+          )}
+
+          {isEditMode && task?.taskType === 'OWNER_ASSIGNED' && (
+            <div className="rounded-md border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
+              This assigned task is independent for each member. Your changes affect only this copy.
+            </div>
+          )}
 
           <div>
             <label htmlFor="status" className="mb-1 block text-sm font-medium text-slate-700">
