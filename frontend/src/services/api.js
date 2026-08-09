@@ -85,6 +85,11 @@ export const workspaceApi = {
     return data;
   },
 
+  getInvitations: async () => {
+    const { data } = await apiClient.get('/workspaces/invitations/me');
+    return data;
+  },
+
   create: async (payload) => {
     const { data } = await apiClient.post('/workspaces', payload);
     return data;
@@ -102,6 +107,11 @@ export const workspaceApi = {
 
   addMember: async (workspaceId, payload) => {
     const { data } = await apiClient.post(`/workspaces/${workspaceId}/members`, payload);
+    return data;
+  },
+
+  respondToInvitation: async (inviteId, action) => {
+    const { data } = await apiClient.patch(`/workspaces/invitations/${inviteId}`, { action });
     return data;
   },
 

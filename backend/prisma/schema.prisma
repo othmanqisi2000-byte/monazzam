@@ -33,6 +33,12 @@ enum WorkspaceRole {
   MEMBER
 }
 
+enum WorkspaceInviteStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+}
+
 model User {
   id                  String            @id @default(uuid())
   name                String
@@ -44,6 +50,8 @@ model User {
   movedTasks          Task[]            @relation("TaskLastMovedBy")
   workspaceMemberships WorkspaceMember[]
   ownedWorkspaces     Workspace[]       @relation("WorkspaceOwner")
+  sentWorkspaceInvites WorkspaceInvite[] @relation("WorkspaceInviteSender")
+  receivedWorkspaceInvites WorkspaceInvite[] @relation("WorkspaceInviteRecipient")
   createdAt           DateTime          @default(now())
   updatedAt           DateTime          @updatedAt
 
@@ -56,6 +64,7 @@ model Workspace {
   ownerId   String
   owner     User              @relation("WorkspaceOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members   WorkspaceMember[]
+  invites   WorkspaceInvite[]
   tasks     Task[]
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
@@ -76,6 +85,25 @@ model WorkspaceMember {
   @@unique([workspaceId, userId])
   @@index([userId])
   @@map("workspace_members")
+}
+
+model WorkspaceInvite {
+  id          String                @id @default(uuid())
+  workspaceId String
+  inviterId   String
+  inviteeId   String
+  status      WorkspaceInviteStatus @default(PENDING)
+  respondedAt DateTime?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+  workspace   Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  inviter     User                  @relation("WorkspaceInviteSender", fields: [inviterId], references: [id], onDelete: Cascade)
+  invitee     User                  @relation("WorkspaceInviteRecipient", fields: [inviteeId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, inviteeId])
+  @@index([inviteeId, status])
+  @@index([workspaceId, status])
+  @@map("workspace_invites")
 }
 
 model Task {

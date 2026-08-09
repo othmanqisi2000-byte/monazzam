@@ -17,6 +17,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [workspaces, setWorkspaces] = useState([]);
+  const [pendingInvitations, setPendingInvitations] = useState([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState('');
 
   const syncWorkspaces = async (preferredWorkspaceId = '') => {
@@ -34,6 +35,12 @@ function App() {
     return data;
   };
 
+  const syncInvitations = async () => {
+    const data = await workspaceApi.getInvitations();
+    setPendingInvitations(data);
+    return data;
+  };
+
   useEffect(() => {
     const restoreSession = async () => {
       const token = getStoredAuthToken();
@@ -45,11 +52,12 @@ function App() {
       try {
         const user = await authApi.getCurrentUser();
         setCurrentUser(user);
-        await syncWorkspaces();
+        await Promise.all([syncWorkspaces(), syncInvitations()]);
       } catch (error) {
         setStoredAuthToken('');
         setStoredWorkspaceId('');
         setCurrentUser(null);
+        setPendingInvitations([]);
       } finally {
         setIsRestoringSession(false);
       }
@@ -64,7 +72,7 @@ function App() {
 
     setStoredAuthToken(response.token);
     setCurrentUser(response.user);
-    await syncWorkspaces();
+    await Promise.all([syncWorkspaces(), syncInvitations()]);
   };
 
   const handleLogout = () => {
@@ -72,6 +80,7 @@ function App() {
     setStoredWorkspaceId('');
     setCurrentUser(null);
     setWorkspaces([]);
+    setPendingInvitations([]);
     setActiveWorkspaceId('');
     setAuthMode('login');
   };
@@ -138,6 +147,15 @@ function App() {
         onLeaveWorkspace={async (workspaceId) => {
           await workspaceApi.leave(workspaceId);
           await syncWorkspaces();
+        }}
+        pendingInvitations={pendingInvitations}
+        onRespondToInvitation={async (inviteId, action) => {
+          const result = await workspaceApi.respondToInvitation(inviteId, action);
+          await Promise.all([
+            syncWorkspaces(action === 'accept' ? result.workspaceId : ''),
+            syncInvitations(),
+          ]);
+          return result;
         }}
         onLoadWorkspaceMembers={(workspaceId) => workspaceApi.getMembers(workspaceId)}
         onAddWorkspaceMember={(workspaceId, payload) => workspaceApi.addMember(workspaceId, payload)}

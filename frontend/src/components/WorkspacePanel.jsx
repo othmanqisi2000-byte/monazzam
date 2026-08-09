@@ -3,11 +3,13 @@ import { AlertCircle, LogOut, Plus, Trash2, Users } from 'lucide-react';
 
 function WorkspacePanel({
   workspaces,
+  pendingInvitations,
   activeWorkspaceId,
   onSelectWorkspace,
   onCreateWorkspace,
   onDeleteWorkspace,
   onLeaveWorkspace,
+  onRespondToInvitation,
   onLoadMembers,
   onAddMember,
 }) {
@@ -22,15 +24,19 @@ function WorkspacePanel({
 
   const [isMembersOpen, setIsMembersOpen] = useState(false);
   const [members, setMembers] = useState([]);
+  const [workspaceInvites, setWorkspaceInvites] = useState([]);
   const [membersError, setMembersError] = useState('');
   const [isLoadingMembers, setIsLoadingMembers] = useState(false);
   const [memberEmail, setMemberEmail] = useState('');
   const [inviteError, setInviteError] = useState('');
+  const [inviteSuccess, setInviteSuccess] = useState('');
   const [isInviting, setIsInviting] = useState(false);
   const [leaveError, setLeaveError] = useState('');
   const [isLeaving, setIsLeaving] = useState(false);
   const [deleteError, setDeleteError] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
+  const [invitationActionError, setInvitationActionError] = useState('');
+  const [invitationActionId, setInvitationActionId] = useState('');
 
   useEffect(() => {
     if (!isMembersOpen) return;
@@ -41,7 +47,8 @@ function WorkspacePanel({
       setMembersError('');
       try {
         const data = await onLoadMembers(activeWorkspaceId);
-        setMembers(data);
+        setMembers(data.members || []);
+        setWorkspaceInvites(data.pendingInvites || []);
       } catch (error) {
         setMembersError(error.message || 'Failed to load members.');
       } finally {
@@ -81,15 +88,29 @@ function WorkspacePanel({
     }
 
     setInviteError('');
+    setInviteSuccess('');
     setIsInviting(true);
     try {
-      const newMember = await onAddMember(activeWorkspaceId, { email: memberEmail.trim() });
-      setMembers((prev) => [...prev, newMember]);
+      const newInvite = await onAddMember(activeWorkspaceId, { email: memberEmail.trim() });
+      setWorkspaceInvites((prev) => [...prev, newInvite]);
       setMemberEmail('');
+      setInviteSuccess('Invitation sent. The user must accept before joining.');
     } catch (error) {
       setInviteError(error.message || 'Failed to add member.');
     } finally {
       setIsInviting(false);
+    }
+  };
+
+  const handleInvitationResponse = async (inviteId, action) => {
+    setInvitationActionError('');
+    setInvitationActionId(inviteId);
+    try {
+      await onRespondToInvitation(inviteId, action);
+    } catch (error) {
+      setInvitationActionError(error.message || 'Failed to respond to invitation.');
+    } finally {
+      setInvitationActionId('');
     }
   };
 
@@ -136,6 +157,50 @@ function WorkspacePanel({
   return (
     <>
       <div className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        {pendingInvitations.length > 0 && (
+          <div className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-4">
+            <h3 className="text-sm font-semibold text-indigo-900">Pending community invitations</h3>
+            <div className="mt-3 space-y-3">
+              {pendingInvitations.map((invite) => (
+                <div
+                  key={invite.id}
+                  className="flex flex-col gap-3 rounded-xl border border-indigo-100 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <div className="text-sm font-medium text-slate-800">{invite.workspaceName}</div>
+                    <div className="text-xs text-slate-500">
+                      Invited by {invite.invitedByName}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleInvitationResponse(invite.id, 'decline')}
+                      disabled={invitationActionId === invite.id}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      Decline
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleInvitationResponse(invite.id, 'accept')}
+                      disabled={invitationActionId === invite.id}
+                      className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-60"
+                    >
+                      {invitationActionId === invite.id ? 'Please wait...' : 'Accept'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {invitationActionError && (
+              <div className="mt-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                <AlertCircle size={16} />
+                {invitationActionError}
+              </div>
+            )}
+          </div>
+        )}
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-sm font-medium text-slate-500">Shared workspace</p>
@@ -265,7 +330,7 @@ function WorkspacePanel({
               {activeWorkspace ? `${activeWorkspace.name} members` : 'Workspace members'}
             </h3>
             <p className="mt-2 text-sm text-slate-500">
-              Add registered users by email so they can work on the same tasks with you.
+              Invite registered users by email. They will join only after they approve the invitation.
             </p>
             {!canManageMembers && (
               <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
@@ -329,7 +394,7 @@ function WorkspacePanel({
                 disabled={isInviting || !activeWorkspaceId || !canManageMembers}
                 className="rounded-xl bg-indigo-600 px-4 py-3 text-sm font-medium text-white hover:bg-indigo-700 disabled:bg-indigo-300"
               >
-                {isInviting ? 'Adding...' : 'Add'}
+                {isInviting ? 'Sending...' : 'Send Invite'}
               </button>
             </form>
 
@@ -337,6 +402,33 @@ function WorkspacePanel({
               <div className="mt-3 flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 <AlertCircle size={16} />
                 {inviteError}
+              </div>
+            )}
+            {inviteSuccess && (
+              <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                {inviteSuccess}
+              </div>
+            )}
+
+            {workspaceInvites.length > 0 && (
+              <div className="mt-5">
+                <h4 className="mb-3 text-sm font-semibold text-slate-700">Pending invitations</h4>
+                <div className="space-y-3">
+                  {workspaceInvites.map((invite) => (
+                    <div
+                      key={invite.id}
+                      className="flex items-center justify-between rounded-xl border border-indigo-100 bg-indigo-50/50 px-4 py-3"
+                    >
+                      <div>
+                        <div className="text-sm font-semibold text-slate-800">{invite.name}</div>
+                        <div className="text-xs text-slate-500">{invite.email}</div>
+                      </div>
+                      <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-indigo-700">
+                        Pending
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

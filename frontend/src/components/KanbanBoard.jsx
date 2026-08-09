@@ -20,11 +20,13 @@ function reindex(taskList) {
 function KanbanBoard({
   currentUser,
   workspaces,
+  pendingInvitations,
   activeWorkspaceId,
   onSelectWorkspace,
   onCreateWorkspace,
   onDeleteWorkspace,
   onLeaveWorkspace,
+  onRespondToInvitation,
   onLoadWorkspaceMembers,
   onAddWorkspaceMember,
   reminderEmail,
@@ -188,11 +190,13 @@ function KanbanBoard({
     <div>
       <WorkspacePanel
         workspaces={workspaces}
+        pendingInvitations={pendingInvitations}
         activeWorkspaceId={activeWorkspaceId}
         onSelectWorkspace={onSelectWorkspace}
         onCreateWorkspace={onCreateWorkspace}
         onDeleteWorkspace={onDeleteWorkspace}
         onLeaveWorkspace={onLeaveWorkspace}
+        onRespondToInvitation={onRespondToInvitation}
         onLoadMembers={onLoadWorkspaceMembers}
         onAddMember={onAddWorkspaceMember}
       />

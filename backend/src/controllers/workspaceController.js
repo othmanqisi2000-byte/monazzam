@@ -103,16 +103,51 @@ async function listWorkspaceMembers(req, res) {
       orderBy: [{ role: 'asc' }, { createdAt: 'asc' }],
     });
 
-    return res.status(200).json(
-      members.map((member) => ({
+    const pendingInvites = await prisma.workspaceInvite.findMany({
+      where: {
+        workspaceId,
+        status: 'PENDING',
+      },
+      include: {
+        invitee: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            reminderEmail: true,
+            createdAt: true,
+          },
+        },
+        inviter: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return res.status(200).json({
+      members: members.map((member) => ({
         id: member.user.id,
         name: member.user.name,
         email: member.user.email,
         reminderEmail: member.user.reminderEmail,
         role: member.role,
         joinedAt: member.createdAt,
-      }))
-    );
+      })),
+      pendingInvites: pendingInvites.map((invite) => ({
+        id: invite.id,
+        inviteeId: invite.invitee.id,
+        name: invite.invitee.name,
+        email: invite.invitee.email,
+        reminderEmail: invite.invitee.reminderEmail,
+        invitedAt: invite.createdAt,
+        invitedByName: invite.inviter.name,
+      })),
+    });
   } catch (error) {
     console.error('List workspace members error:', error);
     return res.status(error.status || 500).json({ error: error.message || 'Failed to load members.' });
@@ -143,14 +178,49 @@ async function addWorkspaceMember(req, res) {
       return res.status(409).json({ error: 'This user is already in the workspace.' });
     }
 
-    const member = await prisma.workspaceMember.create({
-      data: {
-        workspaceId,
-        userId: user.id,
-        role: 'MEMBER',
+    const existingInvite = await prisma.workspaceInvite.findUnique({
+      where: {
+        workspaceId_inviteeId: {
+          workspaceId,
+          inviteeId: user.id,
+        },
       },
       include: {
-        user: {
+        invitee: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            reminderEmail: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    if (existingInvite?.status === 'PENDING') {
+      return res.status(409).json({ error: 'This user already has a pending invitation.' });
+    }
+
+    const invite = await prisma.workspaceInvite.upsert({
+      where: {
+        workspaceId_inviteeId: {
+          workspaceId,
+          inviteeId: user.id,
+        },
+      },
+      update: {
+        inviterId: req.user.id,
+        status: 'PENDING',
+        respondedAt: null,
+      },
+      create: {
+        workspaceId,
+        inviterId: req.user.id,
+        inviteeId: user.id,
+      },
+      include: {
+        invitee: {
           select: {
             id: true,
             name: true,
@@ -163,16 +233,137 @@ async function addWorkspaceMember(req, res) {
     });
 
     return res.status(201).json({
-      id: member.user.id,
-      name: member.user.name,
-      email: member.user.email,
-      reminderEmail: member.user.reminderEmail,
-      role: member.role,
-      joinedAt: member.createdAt,
+      id: invite.id,
+      inviteeId: invite.invitee.id,
+      name: invite.invitee.name,
+      email: invite.invitee.email,
+      reminderEmail: invite.invitee.reminderEmail,
+      invitedAt: invite.createdAt,
+      message: 'Invitation sent successfully.',
     });
   } catch (error) {
     console.error('Add workspace member error:', error);
-    return res.status(error.status || 500).json({ error: error.message || 'Failed to add member.' });
+    return res.status(error.status || 500).json({ error: error.message || 'Failed to send invitation.' });
+  }
+}
+
+async function listMyWorkspaceInvites(req, res) {
+  try {
+    const invites = await prisma.workspaceInvite.findMany({
+      where: {
+        inviteeId: req.user.id,
+        status: 'PENDING',
+      },
+      include: {
+        workspace: {
+          select: {
+            id: true,
+            name: true,
+            ownerId: true,
+          },
+        },
+        inviter: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return res.status(200).json(
+      invites.map((invite) => ({
+        id: invite.id,
+        workspaceId: invite.workspace.id,
+        workspaceName: invite.workspace.name,
+        ownerId: invite.workspace.ownerId,
+        invitedByName: invite.inviter.name,
+        invitedByEmail: invite.inviter.email,
+        invitedAt: invite.createdAt,
+      }))
+    );
+  } catch (error) {
+    console.error('List my workspace invites error:', error);
+    return res.status(500).json({ error: 'Failed to load invitations.' });
+  }
+}
+
+async function respondToWorkspaceInvite(req, res) {
+  try {
+    const { inviteId } = req.params;
+    const { action } = req.body;
+
+    if (!['accept', 'decline'].includes(action)) {
+      return res.status(400).json({ error: 'A valid invitation action is required.' });
+    }
+
+    const invite = await prisma.workspaceInvite.findFirst({
+      where: {
+        id: inviteId,
+        inviteeId: req.user.id,
+        status: 'PENDING',
+      },
+    });
+
+    if (!invite) {
+      return res.status(404).json({ error: 'Invitation not found.' });
+    }
+
+    if (action === 'decline') {
+      await prisma.workspaceInvite.update({
+        where: { id: invite.id },
+        data: {
+          status: 'DECLINED',
+          respondedAt: new Date(),
+        },
+      });
+
+      return res.status(200).json({
+        id: invite.id,
+        workspaceId: invite.workspaceId,
+        status: 'DECLINED',
+        message: 'Invitation declined.',
+      });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const existingMembership = await tx.workspaceMember.findFirst({
+        where: {
+          workspaceId: invite.workspaceId,
+          userId: req.user.id,
+        },
+      });
+
+      if (!existingMembership) {
+        await tx.workspaceMember.create({
+          data: {
+            workspaceId: invite.workspaceId,
+            userId: req.user.id,
+            role: 'MEMBER',
+          },
+        });
+      }
+
+      await tx.workspaceInvite.update({
+        where: { id: invite.id },
+        data: {
+          status: 'ACCEPTED',
+          respondedAt: new Date(),
+        },
+      });
+    });
+
+    return res.status(200).json({
+      id: invite.id,
+      workspaceId: invite.workspaceId,
+      status: 'ACCEPTED',
+      message: 'Invitation accepted.',
+    });
+  } catch (error) {
+    console.error('Respond to workspace invite error:', error);
+    return res.status(error.status || 500).json({ error: error.message || 'Failed to respond to invitation.' });
   }
 }
 
@@ -238,6 +429,8 @@ module.exports = {
   createWorkspace,
   deleteWorkspace,
   leaveWorkspace,
+  listMyWorkspaceInvites,
   listWorkspaceMembers,
   listWorkspaces,
+  respondToWorkspaceInvite,
 };
