@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DragDropContext } from '@hello-pangea/dnd';
 import { Plus, AlertCircle, Loader2, Mail } from 'lucide-react';
 import Column from './Column.jsx';
@@ -68,6 +68,7 @@ function KanbanBoard({
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [isEmailSettingsOpen, setIsEmailSettingsOpen] = useState(false);
+  const lastLoadedWorkspaceIdRef = useRef('');
 
   const loadTasks = useCallback(async () => {
     if (!activeWorkspaceId) {
@@ -75,16 +76,24 @@ function KanbanBoard({
       setAssignedTasks([]);
       setAssignedOverview([]);
       setIsLoading(false);
+      lastLoadedWorkspaceIdRef.current = '';
       return;
     }
 
-    setIsLoading(true);
+    const isSwitchingWorkspace = lastLoadedWorkspaceIdRef.current !== activeWorkspaceId;
+    const hasBoardData =
+      sharedTasks.length > 0 || assignedTasks.length > 0 || assignedOverview.length > 0;
+
+    if (isSwitchingWorkspace || !hasBoardData) {
+      setIsLoading(true);
+    }
     setError(null);
     try {
       const data = await taskApi.getAllTasks(activeWorkspaceId);
       setSharedTasks(data.sharedTasks || []);
       setAssignedTasks(data.assignedTasks || []);
       setAssignedOverview(data.assignedOverview || []);
+      lastLoadedWorkspaceIdRef.current = activeWorkspaceId;
       if (data.workspaceTaskMode && activeWorkspace?.taskMode !== data.workspaceTaskMode) {
         onUpdateWorkspace?.(activeWorkspaceId, { taskMode: data.workspaceTaskMode });
       }
@@ -93,7 +102,14 @@ function KanbanBoard({
     } finally {
       setIsLoading(false);
     }
-  }, [activeWorkspace?.taskMode, activeWorkspaceId, onUpdateWorkspace]);
+  }, [
+    activeWorkspace?.taskMode,
+    activeWorkspaceId,
+    assignedOverview.length,
+    assignedTasks.length,
+    onUpdateWorkspace,
+    sharedTasks.length,
+  ]);
 
   useEffect(() => {
     loadTasks();

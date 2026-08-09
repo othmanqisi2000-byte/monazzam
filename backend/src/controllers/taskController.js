@@ -146,6 +146,12 @@ async function createTask(req, res) {
     const nextTaskType = VALID_TASK_TYPES.includes(taskType) ? taskType : 'STANDARD';
     const isAssignedOnlyWorkspace = membership.workspace.taskMode === 'OWNER_ASSIGNED_ONLY';
 
+    if (isAssignedOnlyWorkspace && membership.role !== 'OWNER') {
+      return res.status(403).json({
+        error: 'Only the workspace owner can create tasks in this workspace.',
+      });
+    }
+
     if (isAssignedOnlyWorkspace && nextTaskType === 'STANDARD') {
       return res.status(403).json({
         error: 'This workspace only allows separate member copies. Shared tasks are disabled here.',
