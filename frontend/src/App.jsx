@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Loader2, LogOut } from 'lucide-react';
 import AppShell from './components/AppShell.jsx';
 import AuthPage from './components/AuthPage.jsx';
@@ -107,6 +107,14 @@ function App() {
     setCurrentUser(updatedUser);
   };
 
+  const handleUpdateWorkspace = useCallback((workspaceId, updates) => {
+    setWorkspaces((prev) =>
+      prev.map((workspace) =>
+        workspace.id === workspaceId ? { ...workspace, ...updates } : workspace
+      )
+    );
+  }, []);
+
   if (isRestoringSession) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-100 text-slate-500">
@@ -148,13 +156,7 @@ function App() {
         currentUser={currentUser}
         workspaces={workspaces}
         onRefreshWorkspaces={syncWorkspaces}
-        onUpdateWorkspace={(workspaceId, updates) => {
-          setWorkspaces((prev) =>
-            prev.map((workspace) =>
-              workspace.id === workspaceId ? { ...workspace, ...updates } : workspace
-            )
-          );
-        }}
+        onUpdateWorkspace={handleUpdateWorkspace}
         activeWorkspaceId={activeWorkspaceId}
         onSelectWorkspace={(workspaceId) => {
           setActiveWorkspaceId(workspaceId);
