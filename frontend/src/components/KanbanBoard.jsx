@@ -37,6 +37,30 @@ function groupTasksByColumn(tasks) {
   return grouped;
 }
 
+function buildAssignedOverview(tasks) {
+  const overviewMap = new Map();
+
+  for (const task of tasks) {
+    if (!task.assignee) continue;
+
+    if (!overviewMap.has(task.assigneeId)) {
+      overviewMap.set(task.assigneeId, {
+        userId: task.assignee.id,
+        userName: task.assignee.name,
+        userEmail: task.assignee.email,
+        counts: { TODO: 0, IN_PROGRESS: 0, DONE: 0 },
+        tasks: [],
+      });
+    }
+
+    const group = overviewMap.get(task.assigneeId);
+    group.counts[task.status] += 1;
+    group.tasks.push(task);
+  }
+
+  return Array.from(overviewMap.values()).sort((a, b) => a.userName.localeCompare(b.userName));
+}
+
 function KanbanBoard({
   currentUser,
   workspaces,
@@ -61,7 +85,6 @@ function KanbanBoard({
 
   const [sharedTasks, setSharedTasks] = useState([]);
   const [assignedTasks, setAssignedTasks] = useState([]);
-  const [assignedOverview, setAssignedOverview] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [modalState, setModalState] = useState({ isOpen: false, task: null, defaultStatus: 'TODO' });
@@ -74,7 +97,6 @@ function KanbanBoard({
     if (!activeWorkspaceId) {
       setSharedTasks([]);
       setAssignedTasks([]);
-      setAssignedOverview([]);
       setIsLoading(false);
       lastLoadedWorkspaceIdRef.current = '';
       return;
@@ -82,7 +104,7 @@ function KanbanBoard({
 
     const isSwitchingWorkspace = lastLoadedWorkspaceIdRef.current !== activeWorkspaceId;
     const hasBoardData =
-      sharedTasks.length > 0 || assignedTasks.length > 0 || assignedOverview.length > 0;
+      sharedTasks.length > 0 || assignedTasks.length > 0;
 
     if (isSwitchingWorkspace || !hasBoardData) {
       setIsLoading(true);
@@ -92,7 +114,6 @@ function KanbanBoard({
       const data = await taskApi.getAllTasks(activeWorkspaceId);
       setSharedTasks(data.sharedTasks || []);
       setAssignedTasks(data.assignedTasks || []);
-      setAssignedOverview(data.assignedOverview || []);
       lastLoadedWorkspaceIdRef.current = activeWorkspaceId;
       if (data.workspaceTaskMode && activeWorkspace?.taskMode !== data.workspaceTaskMode) {
         onUpdateWorkspace?.(activeWorkspaceId, { taskMode: data.workspaceTaskMode });
@@ -105,7 +126,6 @@ function KanbanBoard({
   }, [
     activeWorkspace?.taskMode,
     activeWorkspaceId,
-    assignedOverview.length,
     assignedTasks.length,
     onUpdateWorkspace,
     sharedTasks.length,
@@ -117,6 +137,83 @@ function KanbanBoard({
 
   const sharedTasksByColumn = useMemo(() => groupTasksByColumn(sharedTasks), [sharedTasks]);
   const assignedTasksByColumn = useMemo(() => groupTasksByColumn(assignedTasks), [assignedTasks]);
+  const assignedOverview = useMemo(
+    () => (isOwner ? buildAssignedOverview(assignedTasks) : []),
+    [assignedTasks, isOwner]
+  );
+
+  const handleOwnerAssignedDragEnd = async (result) => {
+    const { source, destination } = result;
+
+    if (!destination) return;
+    if (source.droppableId === destination.droppableId && source.index === destination.index) {
+      return;
+    }
+
+    const parseDroppable = (droppableId) => {
+      const [, userId, status] = droppableId.split('::');
+      return { userId, status };
+    };
+
+    const sourceMeta = parseDroppable(source.droppableId);
+    const destMeta = parseDroppable(destination.droppableId);
+
+    if (!sourceMeta.userId || sourceMeta.userId !== destMeta.userId) {
+      setError('Each member copy can only be moved within that member board.');
+      return;
+    }
+
+    const previousTasks = assignedTasks;
+    const memberTasks = assignedTasks.filter((task) => task.assigneeId === sourceMeta.userId);
+    const otherTasks = assignedTasks.filter((task) => task.assigneeId !== sourceMeta.userId);
+    const grouped = groupTasksByColumn(memberTasks);
+
+    const sourceList = [...grouped[sourceMeta.status]];
+    const [movedTask] = sourceList.splice(source.index, 1);
+
+    let destList;
+    if (sourceMeta.status === destMeta.status) {
+      destList = sourceList;
+      destList.splice(destination.index, 0, { ...movedTask, status: destMeta.status });
+    } else {
+      destList = [...grouped[destMeta.status]];
+      destList.splice(destination.index, 0, { ...movedTask, status: destMeta.status });
+    }
+
+    const reindexedSource = reindex(sourceList);
+    const reindexedDest =
+      sourceMeta.status === destMeta.status ? reindexedSource : reindex(destList);
+    const untouchedMemberTasks = memberTasks.filter(
+      (task) => task.status !== sourceMeta.status && task.status !== destMeta.status
+    );
+
+    const nextAssignedTasks =
+      sourceMeta.status === destMeta.status
+        ? [...otherTasks, ...untouchedMemberTasks, ...reindexedDest]
+        : [...otherTasks, ...untouchedMemberTasks, ...reindexedSource, ...reindexedDest];
+
+    setAssignedTasks(nextAssignedTasks);
+    setIsSavingOrder(true);
+    setError(null);
+
+    const affectedTasks =
+      sourceMeta.status === destMeta.status
+        ? reindexedDest.map((task) => ({ id: task.id, status: task.status, order: task.order }))
+        : [...reindexedSource, ...reindexedDest].map((task) => ({
+            id: task.id,
+            status: task.status,
+            order: task.order,
+          }));
+
+    try {
+      await taskApi.reorderTasks(activeWorkspaceId, affectedTasks);
+    } catch (err) {
+      setError(err.message || 'Failed to save the new order. Reverting.');
+      setAssignedTasks(previousTasks);
+    } finally {
+      setIsSavingOrder(false);
+    }
+  };
 
   const handleDragEnd = async (result, boardType) => {
     const { source, destination } = result;
@@ -192,7 +289,17 @@ function KanbanBoard({
     if (modalState.task) {
       const updated = await taskApi.updateTask(activeWorkspaceId, modalState.task.id, formData);
       if (updated.taskType === 'OWNER_ASSIGNED') {
-        setAssignedTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+        setAssignedTasks((prev) =>
+          prev.map((t) =>
+            t.id === updated.id
+              ? {
+                  ...t,
+                  ...updated,
+                  assignee: t.assignee,
+                }
+              : t
+          )
+        );
       } else {
         setSharedTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
       }
@@ -372,36 +479,27 @@ function KanbanBoard({
                           <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">Done {member.counts.DONE}</span>
                         </div>
                       </div>
-                      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
-                        {COLUMNS.map((column) => {
-                          const memberTasks = member.tasks.filter((task) => task.status === column.id);
-                          return (
-                            <div key={`${member.userId}-${column.id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                              <div className="mb-3 flex items-center gap-2">
-                                <span className="text-sm font-semibold text-slate-700">{column.title}</span>
-                                <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">{memberTasks.length}</span>
-                              </div>
-                              {memberTasks.length === 0 ? (
-                                <p className="py-4 text-center text-xs text-slate-400">No tasks here</p>
-                              ) : (
-                                memberTasks.map((task, index) => (
-                                  <TaskCard
-                                    key={task.id}
-                                    task={task}
-                                    index={index}
-                                    onEdit={() => {}}
-                                    onDelete={() => {}}
-                                    isDraggable={false}
-                                    canEdit={false}
-                                    canDelete={false}
-                                    assigneeLabel="Member copy"
-                                  />
-                                ))
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <DragDropContext onDragEnd={handleOwnerAssignedDragEnd}>
+                        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+                          {COLUMNS.map((column) => {
+                            const memberTasks = member.tasks.filter((task) => task.status === column.id);
+                            return (
+                              <Column
+                                key={`${member.userId}-${column.id}`}
+                                columnId={column.id}
+                                droppableId={`owner::${member.userId}::${column.id}`}
+                                title={column.title}
+                                tasks={memberTasks}
+                                onAddTask={openCreateModal}
+                                onEditTask={openEditModal}
+                                onDeleteTask={requestDelete}
+                                showAddButton={false}
+                                taskCardProps={{ assigneeLabel: member.userName }}
+                              />
+                            );
+                          })}
+                        </div>
+                      </DragDropContext>
                     </div>
                   ))}
                 </div>

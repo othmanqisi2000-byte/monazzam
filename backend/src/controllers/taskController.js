@@ -63,7 +63,7 @@ async function getAllTasks(req, res) {
       return res.status(200).json({
         workspaceTaskMode: membership.workspace.taskMode,
         sharedTasks,
-        assignedTasks: [],
+        assignedTasks,
         assignedOverview: Array.from(overviewMap.values()),
       });
     }
@@ -298,7 +298,7 @@ async function updateTask(req, res) {
     }
 
     if (existing.taskType === 'OWNER_ASSIGNED') {
-      if (existing.assigneeId !== req.user.id) {
+      if (existing.assigneeId !== req.user.id && membership.role !== 'OWNER') {
         return res.status(403).json({ error: 'Only the assigned member can update this task.' });
       }
     }
@@ -437,7 +437,10 @@ async function reorderTasks(req, res) {
     }
 
     const hasForbiddenAssignedTask = ownedTasks.some(
-      (task) => task.taskType === 'OWNER_ASSIGNED' && task.assigneeId !== req.user.id
+      (task) =>
+        task.taskType === 'OWNER_ASSIGNED' &&
+        task.assigneeId !== req.user.id &&
+        membership.role !== 'OWNER'
     );
 
     if (hasForbiddenAssignedTask) {
