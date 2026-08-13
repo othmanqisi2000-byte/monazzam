@@ -288,6 +288,16 @@ function KanbanBoard({
   const handleModalSubmit = async (formData) => {
     if (modalState.task) {
       const updated = await taskApi.updateTask(activeWorkspaceId, modalState.task.id, formData);
+      if (updated.appliedToAllAssignedCopies) {
+        setAssignedTasks((prev) =>
+          prev.map((task) => {
+            const replacement = updated.updatedTasks.find((nextTask) => nextTask.id === task.id);
+            return replacement ? replacement : task;
+          })
+        );
+        return;
+      }
+
       if (updated.taskType === 'OWNER_ASSIGNED') {
         setAssignedTasks((prev) =>
           prev.map((t) =>
@@ -295,7 +305,6 @@ function KanbanBoard({
               ? {
                   ...t,
                   ...updated,
-                  assignee: t.assignee,
                 }
               : t
           )

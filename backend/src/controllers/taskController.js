@@ -1,6 +1,7 @@
 const prisma = require('../lib/prisma');
 const { WEEKDAY_CODES, resolveOccurrenceForToday } = require('../lib/recurrence');
 const { requireWorkspaceAccess } = require('../lib/workspaceAccess');
+const { randomUUID } = require('crypto');
 
 const VALID_STATUSES = ['TODO', 'IN_PROGRESS', 'DONE'];
 const VALID_TASK_TYPES = ['STANDARD', 'OWNER_ASSIGNED'];
@@ -180,6 +181,8 @@ async function createTask(req, res) {
       }
 
       const createdTasks = await prisma.$transaction(async (tx) => {
+        const assignmentGroupId = randomUUID();
+
         await tx.workspace.update({
           where: { id: workspaceId },
           data: { taskMode: 'OWNER_ASSIGNED_ONLY' },
@@ -210,6 +213,7 @@ async function createTask(req, res) {
             data: {
               userId: req.user.id,
               assigneeId: member.userId,
+              assignmentGroupId,
               workspaceId,
               title: title.trim(),
               description: description ? description.trim() : null,
@@ -280,7 +284,18 @@ async function updateTask(req, res) {
     }
     const membership = await requireWorkspaceAccess(workspaceId, req.user.id);
 
-    const { title, description, status, order, dueDate, reminderEmail, isRecurring, recurringDays, recurringTime } =
+    const {
+      title,
+      description,
+      status,
+      order,
+      dueDate,
+      reminderEmail,
+      isRecurring,
+      recurringDays,
+      recurringTime,
+      applyToAllAssignedCopies,
+    } =
       req.body;
 
     const existing = await prisma.task.findFirst({ where: { id, workspaceId } });
@@ -300,6 +315,10 @@ async function updateTask(req, res) {
     if (existing.taskType === 'OWNER_ASSIGNED') {
       if (existing.assigneeId !== req.user.id && membership.role !== 'OWNER') {
         return res.status(403).json({ error: 'Only the assigned member can update this task.' });
+      }
+
+      if (applyToAllAssignedCopies && membership.role !== 'OWNER') {
+        return res.status(403).json({ error: 'Only the workspace owner can update all member copies.' });
       }
     }
 
@@ -378,9 +397,49 @@ async function updateTask(req, res) {
     data.lastEditedByName = req.user.name;
     data.lastEditedAt = new Date();
 
+    const shouldApplyToAllAssignedCopies =
+      Boolean(applyToAllAssignedCopies) &&
+      existing.taskType === 'OWNER_ASSIGNED' &&
+      membership.role === 'OWNER' &&
+      existing.assignmentGroupId;
+
+    if (shouldApplyToAllAssignedCopies) {
+      await prisma.task.updateMany({
+        where: {
+          workspaceId,
+          taskType: 'OWNER_ASSIGNED',
+          assignmentGroupId: existing.assignmentGroupId,
+        },
+        data,
+      });
+
+      const updatedTasks = await prisma.task.findMany({
+        where: {
+          workspaceId,
+          taskType: 'OWNER_ASSIGNED',
+          assignmentGroupId: existing.assignmentGroupId,
+        },
+        include: {
+          assignee: {
+            select: { id: true, name: true, email: true },
+          },
+        },
+      });
+
+      return res.status(200).json({
+        appliedToAllAssignedCopies: true,
+        updatedTasks,
+      });
+    }
+
     const task = await prisma.task.update({
       where: { id },
       data,
+      include: {
+        assignee: {
+          select: { id: true, name: true, email: true },
+        },
+      },
     });
 
     return res.status(200).json(task);

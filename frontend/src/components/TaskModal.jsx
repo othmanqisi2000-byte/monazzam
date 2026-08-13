@@ -62,10 +62,16 @@ function TaskModal({
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurringDays, setRecurringDays] = useState([]);
   const [recurringTime, setRecurringTime] = useState('09:00');
+  const [editScope, setEditScope] = useState('single');
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isEditMode = Boolean(task);
+  const canChooseAssignedEditScope =
+    isEditMode &&
+    task?.taskType === 'OWNER_ASSIGNED' &&
+    canCreateAssignedTask &&
+    Boolean(task?.assignmentGroupId);
 
   useEffect(() => {
     if (isOpen) {
@@ -79,6 +85,7 @@ function TaskModal({
       setIsRecurring(Boolean(task?.isRecurring));
       setRecurringDays(task?.recurringDays || []);
       setRecurringTime(task?.recurringTime || '09:00');
+      setEditScope('single');
       setErrors({});
       setIsSubmitting(false);
     }
@@ -128,6 +135,7 @@ function TaskModal({
         isRecurring,
         recurringDays: isRecurring ? recurringDays : [],
         recurringTime: isRecurring ? recurringTime : null,
+        applyToAllAssignedCopies: canChooseAssignedEditScope && editScope === 'all',
       });
       onClose();
     } catch (err) {
@@ -227,7 +235,39 @@ function TaskModal({
 
           {isEditMode && task?.taskType === 'OWNER_ASSIGNED' && (
             <div className="rounded-md border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs text-indigo-700">
-              This assigned task is independent for each member. Your changes affect only this copy.
+              {canChooseAssignedEditScope
+                ? 'Choose whether this edit should update only the selected member copy or every member copy in this assigned task set.'
+                : 'This assigned task is independent for each member. Older copies without a shared group can only be edited one at a time.'}
+            </div>
+          )}
+
+          {canChooseAssignedEditScope && (
+            <div>
+              <label className="mb-1 block text-sm font-medium text-slate-700">Apply changes to</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditScope('single')}
+                  className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                    editScope === 'single'
+                      ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                      : 'border-slate-300 bg-white text-slate-600 hover:border-indigo-300'
+                  }`}
+                >
+                  Only this member
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditScope('all')}
+                  className={`rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                    editScope === 'all'
+                      ? 'border-indigo-600 bg-indigo-50 text-indigo-700'
+                      : 'border-slate-300 bg-white text-slate-600 hover:border-indigo-300'
+                  }`}
+                >
+                  All members
+                </button>
+              </div>
             </div>
           )}
 
